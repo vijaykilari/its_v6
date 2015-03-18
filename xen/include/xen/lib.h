@@ -55,6 +55,8 @@
 
 #define ROUNDUP(x, a) (((x) + (a) - 1) & ~((a) - 1))
 
+#define ALIGN_MASK(x, mask) (((x) + (mask)) & ~(mask))
+
 #define reserve_bootmem(_p,_l) ((void)0)
 
 struct domain;

@@ -46,6 +46,7 @@
 /* Additional bits in GICD_TYPER defined by GICv3 */
 #define GICD_TYPE_ID_BITS_SHIFT 19
 
+#define GICD_TYPER_LPIS_SUPPORTED    (1U << 17)
 #define GICD_CTLR_RWP                (1UL << 31)
 #define GICD_CTLR_ARE_NS             (1U << 4)
 #define GICD_CTLR_ENABLE_G1A         (1U << 1)
@@ -56,6 +57,15 @@
 
 #define GICR_WAKER_ProcessorSleep    (1U << 1)
 #define GICR_WAKER_ChildrenAsleep    (1U << 2)
+
+#define GIC_PIDR2_ARCH_REV_MASK      (0xf0)
+#define GICD_PIDR2_ARCH_REV_MASK     GIC_PIDR2_ARCH_REV_MASK
+#define GICD_PIDR2_ARCH_REV_SHIFT    (0x4)
+#define GICD_PIDR2_ARCH_GICV3        (0x3)
+
+#define GICR_PIDR2_ARCH_REV_MASK     GIC_PIDR2_ARCH_REV_MASK
+#define GICR_PIDR2_ARCH_REV_SHIFT    GICD_PIDR2_ARCH_REV_SHIFT
+#define GICR_PIDR2_ARCH_GICV3        GICD_PIDR2_ARCH_GICV3
 
 #define GICR_SYNCR_NOT_BUSY          1
 /*
@@ -95,9 +105,23 @@
 #define GICR_IGRPMODR0               (0x0D00)
 #define GICR_NSACR                   (0x0E00)
 
+#define GICR_CTLR_ENABLE_LPIS        (1UL << 0)
+#define GICR_TYPER_CPU_NUMBER(r)     (((r) >> 8) & 0xffff)
+
+#define GICR_PROPBASER_InnerShareable    (1U << 10)
+#define GICR_PROPBASER_SHAREABILITY_MASK (3UL << 10)
+#define GICR_PROPBASER_nC                (1U << 7)
+#define GICR_PROPBASER_WaWb              (5U << 7)
+#define GICR_PROPBASER_CACHEABILITY_MASK (7U << 7)
+#define GICR_PROPBASER_IDBITS_MASK       (0x1f)
 #define GICR_TYPER_PLPIS             (1U << 0)
 #define GICR_TYPER_VLPIS             (1U << 1)
 #define GICR_TYPER_LAST              (1U << 4)
+
+#define GICR_PENDBASER_InnerShareable    (1U << 10)
+#define GICR_PENDBASER_SHAREABILITY_MASK (3UL << 10)
+#define GICR_PENDBASER_nC                (1U << 7)
+#define GICR_PENDBASER_CACHEABILITY_MASK (7U << 7)
 
 #define DEFAULT_PMR_VALUE            0xff
 
@@ -142,6 +166,28 @@ struct rdist_region {
     paddr_t size;
     void __iomem *map_base;
 };
+
+/* Re-distributor per-cpu information */
+struct rdist {
+    /* CPU Re-distributor address */
+    void __iomem *rbase;
+    /* CPU LPI pending table */
+    void *pend_page;
+    /* CPU Re-distributor physical address */
+    paddr_t phys_base;
+};
+
+/* Common Re-distributor information */
+struct rdist_prop {
+    /* CPUs LPI configuration table */
+    void *prop_page;
+    /* Number of ID bits */
+    int id_bits;
+    /* Flags to store rdist attributes */
+    uint64_t flags;
+};
+
+DECLARE_PER_CPU(struct rdist, rdist);
 
 #endif /* __ASM_ARM_GIC_V3_DEFS_H__ */
 

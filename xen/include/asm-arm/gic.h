@@ -166,6 +166,7 @@
     DT_MATCH_COMPATIBLE("arm,gic-400")
 
 #define DT_MATCH_GIC_V3 DT_MATCH_COMPATIBLE("arm,gic-v3")
+#define DT_MATCH_GIC_ITS DT_MATCH_COMPATIBLE("arm,gic-v3-its")
 
 #ifdef CONFIG_HAS_GICV3
 /*

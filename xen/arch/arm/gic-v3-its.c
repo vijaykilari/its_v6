@@ -93,6 +93,8 @@ struct its_node {
 static LIST_HEAD(its_nodes);
 static DEFINE_SPINLOCK(its_lock);
 static struct rdist_prop  *gic_rdists;
+static struct rb_root rb_its_dev;
+static DEFINE_SPINLOCK(rb_its_dev_lock);
 
 #define gic_data_rdist()    (this_cpu(rdist))
 
@@ -113,6 +115,63 @@ static struct its_collection *dev_event_to_col(struct its_device *dev,
     struct its_node *its = dev->its;
 
     return its->collections + dev->event_map.col_map[event];
+}
+
+/* RB-tree helpers for its_device */
+static struct its_device *its_find_device(u32 devid)
+{
+    struct rb_node *node = rb_its_dev.rb_node;
+
+    ASSERT(spin_is_locked(&rb_its_dev_lock));
+    while ( node )
+    {
+        struct its_device *dev;
+
+        dev = container_of(node, struct its_device, node);
+        if ( devid < dev->device_id )
+            node = node->rb_left;
+        else if ( devid > dev->device_id )
+            node = node->rb_right;
+        else
+            return dev;
+    }
+
+    return NULL;
+}
+
+static int its_insert_device(struct its_device *dev)
+{
+    struct rb_node **new, *parent;
+
+    ASSERT(spin_is_locked(&rb_its_dev_lock));
+    new = &rb_its_dev.rb_node;
+    parent = NULL;
+    while ( *new )
+    {
+        struct its_device *this;
+
+        this  = container_of(*new, struct its_device, node);
+        parent = *new;
+        if ( dev->device_id < this->device_id )
+            new = &((*new)->rb_left);
+        else if ( dev->device_id > this->device_id )
+            new = &((*new)->rb_right);
+        else
+            return -EEXIST;
+    }
+
+    rb_link_node(&dev->node, parent, new);
+    rb_insert_color(&dev->node, &rb_its_dev);
+
+    return 0;
+}
+
+static void its_remove_device(struct its_device *dev)
+{
+    ASSERT(spin_is_locked(&rb_its_dev_lock));
+
+    if ( dev )
+        rb_erase(&dev->node, &rb_its_dev);
 }
 
 #define ITS_CMD_QUEUE_SZ            SZ_64K
@@ -952,6 +1011,8 @@ static int its_probe(struct dt_device_node *node)
     spin_lock(&its_lock);
     list_add(&its->entry, &its_nodes);
     spin_unlock(&its_lock);
+
+    rb_its_dev = RB_ROOT;
 
     return 0;
 

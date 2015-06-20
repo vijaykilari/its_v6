@@ -19,6 +19,7 @@
 #define __ASM_ARM_GIC_ITS_H__
 
 #include <asm/gic_v3_defs.h>
+#include <xen/rbtree.h>
 
 /*
  * ITS registers, offsets from ITS_base
@@ -266,6 +267,8 @@ struct its_device {
     struct event_lpi_map    event_map;
     /* Physical Device id */
     u32                     device_id;
+    /* RB-tree entry */
+    struct rb_node          node;
 };
 
 int its_init(struct rdist_prop *rdists);

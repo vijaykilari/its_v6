@@ -145,6 +145,19 @@ static struct its_collection *dev_event_to_col(struct its_device *dev,
     return its->collections + dev->event_map.col_map[event];
 }
 
+static struct its_node *its_get_phys_node(struct dt_device_node *dt)
+{
+    struct its_node *its;
+
+    list_for_each_entry(its, &its_nodes, entry)
+    {
+        if ( its->dt_node == dt )
+            return its;
+    }
+
+    return NULL;
+}
+
 /* RB-tree helpers for its_device */
 static struct its_device *its_find_device(u32 devid)
 {
@@ -542,6 +555,245 @@ static void its_lpi_free(struct its_device *dev)
 
     xfree(dev->event_map.lpi_map);
     xfree(dev->event_map.col_map);
+}
+
+static inline u32 its_get_plpi(struct its_device *dev, u32 event)
+{
+    return dev->event_map.lpi_base + event;
+}
+
+static void its_discard_lpis(struct its_device *dev, u32 ids)
+{
+    u32 i;
+    struct irq_desc *desc;
+
+    for ( i = 0; i < ids; i++ )
+    {
+       its_send_discard(dev, i);
+       desc = irq_to_desc(its_get_plpi(dev, i));
+
+       spin_lock(&desc->lock);
+       irqdesc_set_lpi_event(desc, 0);
+       irqdesc_set_its_device(desc, NULL);
+       /*
+        * Here only msi_descs are cleaned.
+        * TODO: Clean irq_descs of this pLPIs.
+        */
+       xfree(irq_get_msi_desc(desc));
+       irq_set_msi_desc(desc, NULL);
+       spin_unlock(&desc->lock);
+    }
+}
+
+static int its_alloc_device_irq(struct its_device *dev, u32 *hwirq)
+{
+    int idx;
+
+    idx = find_first_zero_bit(dev->event_map.lpi_map, dev->event_map.nr_lpis);
+    if ( idx == dev->event_map.nr_lpis )
+        return -ENOSPC;
+
+    *hwirq = its_get_plpi(dev, idx);
+    set_bit(idx, dev->event_map.lpi_map);
+
+    return 0;
+}
+
+static void its_free_device(struct its_device *dev)
+{
+    xfree(dev->itt);
+    its_lpi_free(dev);
+    xfree(dev);
+}
+
+static struct its_device *its_alloc_device(u32 devid, u32 nr_ites,
+                                           struct dt_device_node *dt_its)
+{
+    struct its_device *dev;
+    unsigned long *lpi_map;
+    int lpi_base, sz;
+    u16 *col_map = NULL;
+
+    dev = xzalloc(struct its_device);
+    if ( dev == NULL )
+        return NULL;
+
+    dev->its = its_get_phys_node(dt_its);
+    if ( dev->its == NULL )
+    {
+        printk(XENLOG_ERR
+               "ITS: Failed to find ITS node for devid 0x%"PRIx32"\n", devid);
+        goto err;
+    }
+
+    /*
+     * At least one bit of EventID is being used, hence a minimum
+     * of two entries. No, the architecture doesn't let you
+     * express an ITT with a single entry.
+     */
+    nr_ites = max(2UL, roundup_pow_of_two(nr_ites));
+    sz = nr_ites * dev->its->ite_size;
+    sz = max(sz, ITS_ITT_ALIGN) + ITS_ITT_ALIGN - 1;
+
+    dev->itt = xzalloc_bytes(sz);
+    if ( !dev->itt )
+        goto err;
+
+    lpi_map = its_lpi_alloc_chunks(nr_ites, &lpi_base);
+    if ( !lpi_map )
+        goto lpi_err;
+
+    col_map = xzalloc_bytes(sizeof(*col_map) * nr_ites);
+    if ( !col_map )
+        goto col_err;
+
+    dev->event_map.lpi_map = lpi_map;
+    dev->event_map.lpi_base = lpi_base;
+    dev->event_map.col_map = col_map;
+    dev->event_map.nr_lpis = nr_ites;
+    dev->device_id = devid;
+
+    return dev;
+
+col_err:
+    its_free_device(dev);
+    return NULL;
+lpi_err:
+    xfree(dev->itt);
+err:
+    xfree(dev);
+
+    return NULL;
+}
+
+/* Device assignment */
+int its_add_device(u32 devid, u32 nr_ites, struct dt_device_node *dt_its)
+{
+    struct its_device *dev;
+    u32 i, plpi = 0;
+    struct its_collection *col;
+    struct irq_desc *desc;
+    struct msi_desc *msi = NULL;
+    int res = 0;
+
+    spin_lock(&rb_its_dev_lock);
+    dev = its_find_device(devid);
+    if ( dev )
+    {
+        printk(XENLOG_ERR "ITS: Device already exists 0x%"PRIx32"\n",
+               dev->device_id);
+        res = -EEXIST;
+        goto err_unlock;
+    }
+
+    dev = its_alloc_device(devid, nr_ites, dt_its);
+    if ( !dev )
+    {
+        res = -ENOMEM;
+        goto err_unlock;
+    }
+
+    BUG_ON(its_insert_device(dev));
+    spin_unlock(&rb_its_dev_lock);
+
+    DPRINTK("ITS:Add Device 0x%"PRIx32" lpis %"PRIu32" base 0x%"PRIx32"\n",
+            dev->device_id, dev->event_map.nr_lpis, dev->event_map.lpi_base);
+
+    /* Map device to ITS ITT */
+    its_send_mapd(dev, 1);
+
+    for ( i = 0; i < dev->event_map.nr_lpis; i++ )
+    {
+        msi = xzalloc(struct msi_desc);
+        if ( its_alloc_device_irq(dev, &plpi) || !msi )
+        {
+            /* Discard LPIs and free device on failure to allocate pLPI */
+            its_discard_lpis(dev, i);
+            its_send_mapd(dev, 0);
+
+            spin_lock(&rb_its_dev_lock);
+            its_remove_device(dev);
+            spin_unlock(&rb_its_dev_lock);
+
+            its_free_device(dev);
+
+            printk(XENLOG_ERR "ITS: Cannot add device 0x%"PRIx32"\n", devid);
+            res = -ENOSPC;
+            goto err;
+        }
+
+        /*
+         * Each Collection is mapped to one physical CPU and
+         * each pLPI allocated to this device is mapped one collection
+         * in a round robin fashion. Hence all pLPIs are distributed
+         * across all processors in the system.
+         * With this approach, multiple devices having same eventID
+         * will be mapped to same cpu.
+         */
+        col = &dev->its->collections[(i % nr_cpu_ids)];
+        desc = irq_to_desc(plpi);
+
+        spin_lock(&desc->lock);
+        dev->event_map.col_map[i] = col->col_id;
+        irq_set_msi_desc(desc, msi);
+        irqdesc_set_lpi_event(desc, i);
+        irqdesc_set_its_device(desc, dev);
+        spin_unlock(&desc->lock);
+
+        /* For each pLPI send MAPVI command */
+        its_send_mapvi(dev, plpi, i);
+    }
+
+    return 0;
+
+err_unlock:
+    spin_unlock(&rb_its_dev_lock);
+err:
+    return res;
+}
+
+int its_assign_device(struct domain *d, u32 vdevid, u32 pdevid)
+{
+    struct its_device *pdev;
+    u32 plpi, i;
+
+    DPRINTK("ITS: Assign request for dev 0x%"PRIx32" to domain %"PRIu16"\n",
+            vdevid, d->domain_id);
+
+    spin_lock(&rb_its_dev_lock);
+    pdev = its_find_device(pdevid);
+    spin_unlock(&rb_its_dev_lock);
+    if ( !pdev )
+        return -ENODEV;
+
+    /*
+     * TODO: For pass-through following has to be implemented
+     * 1) Allow device to be assigned to other domains (Dom0 -> DomU).
+     * 2) Allow device to be re-assigned to Dom0 (DomU -> Dom0).
+     * Implement separate function to handle this or rework this function.
+     * For now do not allow assigning devices other than Dom0.
+     */
+    if ( !is_hardware_domain(d) )
+    {
+        printk(XENLOG_ERR
+               "ITS: PCI-Passthrough not supported!! to assign from d%d to d%d",
+               pdev->domain->domain_id, d->domain_id);
+        return -ENXIO;
+    }
+
+    pdev->domain = d;
+    pdev->virt_device_id = vdevid;
+
+    DPRINTK("ITS: Assign pdevid 0x%"PRIx32" lpis %"PRIu32" for dom %"PRIu16"\n",
+            pdevid, pdev->event_map.nr_lpis, d->domain_id);
+
+    for ( i = 0; i < pdev->event_map.nr_lpis; i++ )
+    {
+        plpi = its_get_plpi(pdev, i);
+        /* TODO: Route lpi */
+    }
+
+    return 0;
 }
 
 /*

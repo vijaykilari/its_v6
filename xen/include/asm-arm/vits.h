@@ -24,6 +24,10 @@
 struct vgic_its
 {
    spinlock_t lock;
+   /* Emulation of BASER0 */
+   uint64_t baser0;
+   /* GICR ctrl register */
+   uint32_t ctrl;
    /* Command queue base */
    paddr_t cmd_base;
    /* Command queue write pointer */
@@ -32,6 +36,10 @@ struct vgic_its
    atomic_t cmd_read;
    /* Command queue size */
    unsigned long cmd_qsize;
+   /* ITS mmio physical base */
+   paddr_t gits_base;
+   /* ITS mmio physical size */
+   unsigned long gits_size;
    /* vITT device table ipa */
    paddr_t dt_ipa;
    /* vITT device table size */

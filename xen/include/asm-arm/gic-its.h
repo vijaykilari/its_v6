@@ -116,6 +116,17 @@ struct its_collection {
     u16 col_id;
 };
 
+/*
+ * Per domain virtual ITS structure.
+ */
+struct vgic_its
+{
+   /* vITT device table ipa */
+   paddr_t dt_ipa;
+   /* vITT device table size */
+   uint64_t dt_size;
+};
+
 /* ITS command structure */
 typedef union {
     u64 bits[4];
@@ -275,6 +286,27 @@ struct its_device {
     struct rb_node          node;
 };
 
+/*
+ * struct vdevice_table and struct vitt are typically stored in memory
+ * which has been provided by the guest out of its own address space
+ * and which remains accessible to the guest.
+ *
+ * Therefore great care _must_ be taken when accessing an entry in
+ * either table to validate the sanity of any values which are used.
+ */
+struct vdevice_table {
+    uint64_t vitt_ipa;
+    uint32_t vitt_size;
+    uint32_t padding;
+};
+
+struct vitt {
+    uint16_t valid:1;
+    uint16_t pad:15;
+    uint16_t vcollection;
+    uint32_t vlpi;
+};
+
 void irqdesc_set_lpi_event(struct irq_desc *desc, unsigned id);
 unsigned int irqdesc_get_lpi_event(struct irq_desc *desc);
 struct its_device *irqdesc_get_its_device(struct irq_desc *desc);
@@ -284,6 +316,12 @@ int its_init(struct rdist_prop *rdists);
 int its_cpu_init(void);
 int its_add_device(u32 devid, u32 nr_ites, struct dt_device_node *dt_its);
 int its_assign_device(struct domain *d, u32 vdevid, u32 pdevid);
+int vits_access_guest_table(struct domain *d, paddr_t entry, void *addr,
+                            uint32_t size, bool_t set);
+int vits_get_vitt_entry(struct domain *d, uint32_t devid,
+                        uint32_t event, struct vitt *entry);
+int vits_get_vdevice_entry(struct domain *d, uint32_t devid,
+                           struct vdevice_table *entry);
 
 #endif /* __ASM_ARM_GIC_ITS_H__ */
 /*

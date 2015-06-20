@@ -104,6 +104,8 @@ struct arch_domain
         paddr_t dbase; /* Distributor base address */
         paddr_t cbase; /* CPU base address */
 #ifdef HAS_GICV3
+        /* Virtual ITS */
+        struct vgic_its *vits;
         /* GIC V3 addressing */
         /* List of contiguous occupied by the redistributors */
         struct vgic_rdist_region {

@@ -267,6 +267,10 @@ struct its_device {
     struct event_lpi_map    event_map;
     /* Physical Device id */
     u32                     device_id;
+    /* Virtual Device id */
+    u32                     virt_device_id;
+    /* Domain assigned */
+    struct domain           *domain;
     /* RB-tree entry */
     struct rb_node          node;
 };
@@ -277,6 +281,8 @@ struct its_device *irqdesc_get_its_device(struct irq_desc *desc);
 void irqdesc_set_its_device(struct irq_desc *desc, struct its_device *dev);
 int its_init(struct rdist_prop *rdists);
 int its_cpu_init(void);
+int its_add_device(u32 devid, u32 nr_ites, struct dt_device_node *dt_its);
+int its_assign_device(struct domain *d, u32 vdevid, u32 pdevid);
 
 #endif /* __ASM_ARM_GIC_ITS_H__ */
 /*

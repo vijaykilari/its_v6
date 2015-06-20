@@ -31,7 +31,14 @@
 #define GICD_IROUTER                 (0x6000)
 #define GICD_IROUTER32               (0x6100)
 #define GICD_IROUTER1019             (0x7FD8)
+#define GICD_PIDR0                   (0xFFE0)
+#define GICD_PIDR1                   (0xFFE4)
 #define GICD_PIDR2                   (0xFFE8)
+#define GICD_PIDR3                   (0xFFEC)
+#define GICD_PIDR4                   (0xFFD0)
+#define GICD_PIDR5                   (0xFFD4)
+#define GICD_PIDR6                   (0xFFD8)
+#define GICD_PIDR7                   (0xFFDC)
 
 /* Common between GICD_PIDR2 and GICR_PIDR2 */
 #define GIC_PIDR2_ARCH_MASK         (0xf0)
@@ -88,7 +95,14 @@
 #define GICR_INVLPIR                 (0x00A0)
 #define GICR_INVALLR                 (0x00B0)
 #define GICR_SYNCR                   (0x00C0)
+#define GICR_PIDR0                   GICD_PIDR0
+#define GICR_PIDR1                   GICD_PIDR1
 #define GICR_PIDR2                   GICD_PIDR2
+#define GICR_PIDR3                   GICD_PIDR3
+#define GICR_PIDR4                   GICD_PIDR4
+#define GICR_PIDR5                   GICD_PIDR5
+#define GICR_PIDR6                   GICD_PIDR6
+#define GICR_PIDR7                   GICD_PIDR7
 
 /* GICR for SGI's & PPI's */
 

@@ -33,8 +33,26 @@
 #include <asm/gic-its.h>
 #include <asm/vits.h>
 #include <xen/log2.h>
+#include <asm/vgic-emul.h>
 
 //#define DEBUG_ITS
+
+/* GITS_PIDRn register values for ARM implementations */
+#define GITS_PIDR0_VAL               (0x94)
+#define GITS_PIDR1_VAL               (0xb4)
+#define GITS_PIDR2_VAL               (0x3b)
+#define GITS_PIDR3_VAL               (0x00)
+#define GITS_PIDR4_VAL               (0x04)
+
+/*
+ * GITS_BASER0 is used to allocate memory for the Device table.
+ * Some of the fields GITS_BASER0.Type and GITS_BASER0.Entry_size
+ * are read-only. Initialize GITS_BASER0_Type = 1 ( Device )
+ * and GITS_BASER0.Entry_size = size of vitt structure (vitt)-1.
+ */
+#define GITS_BASER0_INIT_VAL         ((1UL << GITS_BASER_TYPE_SHIFT) | \
+                                      ((sizeof(struct vitt) - 1) <<    \
+                                      GITS_BASER_ENTRY_SIZE_SHIFT))
 
 #ifdef DEBUG_ITS
 # define DPRINTK(fmt, args...) dprintk(XENLOG_DEBUG, fmt, ##args)
@@ -505,6 +523,307 @@ err:
     return 0;
 }
 
+static inline void vits_spin_lock(struct vgic_its *vits)
+{
+    spin_lock(&vits->lock);
+}
+
+static inline void vits_spin_unlock(struct vgic_its *vits)
+{
+    spin_unlock(&vits->lock);
+}
+
+static int vgic_v3_gits_mmio_read(struct vcpu *v, mmio_info_t *info,
+                                  register_t *r, void *priv)
+{
+    struct vgic_its *vits = v->domain->arch.vgic.vits;
+    struct hsr_dabt dabt = info->dabt;
+    uint64_t val;
+    uint32_t gits_reg;
+
+    gits_reg = info->gpa - vits->gits_base;
+    DPRINTK("%pv: vITS: GITS_MMIO_READ offset 0x%"PRIx32"\n", v, gits_reg);
+
+    switch ( gits_reg )
+    {
+    case VREG32(GITS_CTLR):
+        if ( dabt.size != DABT_WORD ) goto bad_width;
+        vits_spin_lock(vits);
+        *r = vgic_reg32_extract(vits->ctlr, info);
+        vits_spin_unlock(vits);
+        return 1;
+    case VREG32(GITS_IIDR):
+        if ( dabt.size != DABT_WORD ) goto bad_width;
+        *r = vgic_reg32_extract(GICV3_GICD_IIDR_VAL, info);
+        return 1;
+    case VREG64(GITS_TYPER):
+        /*
+         * GITS_TYPER.HCC = max_vcpus + 1 (max collection supported)
+         * GITS_TYPER.Devbits = HW supported Devbits size
+         * GITS_TYPER.IDbits = HW supported IDbits size
+         * GITS_TYPER.PTA = 0 (Target addresses are linear processor numbers)
+         * GITS_TYPER.ITTSize = Size of struct vitt
+         * GITS_TYPER.Physical = 1
+         */
+        if ( !vgic_reg64_check_access(dabt) ) goto bad_width;
+        val = ((vits_get_max_collections(v->domain) << GITS_TYPER_HCC_SHIFT ) |
+               ((vits_hw.devID_bits - 1) << GITS_TYPER_DEVBITS_SHIFT)         |
+               ((vits_hw.eventID_bits - 1) << GITS_TYPER_IDBITS_SHIFT)        |
+               ((sizeof(struct vitt) - 1) << GITS_TYPER_ITT_SIZE_SHIFT)       |
+                 GITS_TYPER_PHYSICAL_LPIS);
+        *r = vgic_reg64_extract(val, info);
+        return 1;
+    case 0x0010 ... 0x007c:
+    case 0xc000 ... 0xffcc:
+        /* Implementation defined -- read ignored */
+        goto read_as_zero;
+    case VREG64(GITS_CBASER):
+        if ( !vgic_reg64_check_access(dabt) ) goto bad_width;
+        vits_spin_lock(vits);
+        if ( vits->ctlr & GITS_CTLR_ENABLE )
+            *r = vgic_reg64_extract(vits->cmd_base, info);
+        else
+            *r = vgic_reg64_extract(vits->cmd_base_save, info);
+        vits_spin_unlock(vits);
+        return 1;
+    case VREG64(GITS_CWRITER):
+        if ( !vgic_reg64_check_access(dabt) ) goto bad_width;
+        vits_spin_lock(vits);
+        *r = vgic_reg64_extract(vits->cmd_write & 0xfffe0, info);
+        vits_spin_unlock(vits);
+        return 1;
+    case VREG64(GITS_CREADR):
+        if ( !vgic_reg64_check_access(dabt) ) goto bad_width;
+        *r = vgic_reg64_extract(atomic_read(&vits->cmd_read) & 0xfffe0, info);
+        return 1;
+    case 0x0098 ... 0x009c:
+    case 0x00a0 ... 0x00fc:
+    case 0x0140 ... 0xbffc:
+        /* Reserved -- read ignored */
+        goto read_as_zero;
+    case VREG64(GITS_BASER0):
+        if ( !vgic_reg64_check_access(dabt) ) goto bad_width;
+        vits_spin_lock(vits);
+        if ( vits->ctlr & GITS_CTLR_ENABLE )
+            *r = vgic_reg64_extract(vits->baser0, info);
+        else
+            *r = vgic_reg64_extract(vits->baser0_save, info);
+        vits_spin_unlock(vits);
+        return 1;
+    case VRANGE64(GITS_BASER1, GITS_BASERN):
+        goto read_as_zero_64;
+    case VREG32(GITS_PIDR0):
+        if ( dabt.size != DABT_WORD ) goto bad_width;
+        *r = vgic_reg32_extract(GITS_PIDR0_VAL, info);
+        return 1;
+    case VREG32(GITS_PIDR1):
+        if ( dabt.size != DABT_WORD ) goto bad_width;
+        *r = vgic_reg32_extract(GITS_PIDR1_VAL, info);
+        return 1;
+    case VREG32(GITS_PIDR2):
+        if ( dabt.size != DABT_WORD ) goto bad_width;
+        *r = vgic_reg32_extract(GITS_PIDR2_VAL, info);
+        return 1;
+    case VREG32(GITS_PIDR3):
+        if ( dabt.size != DABT_WORD ) goto bad_width;
+        *r = vgic_reg32_extract(GITS_PIDR3_VAL, info);
+        return 1;
+    case VREG32(GITS_PIDR4):
+        if ( dabt.size != DABT_WORD ) goto bad_width;
+        *r = vgic_reg32_extract(GITS_PIDR4_VAL, info);
+        return 1;
+    case VRANGE32(GITS_PIDR5 ,GITS_PIDR7):
+        goto read_as_zero_32;
+   default:
+        dprintk(XENLOG_G_ERR,
+                "%pv: vITS: unhandled read r%d offset 0x%#08"PRIx32"\n",
+                v, dabt.reg, gits_reg);
+        return 0;
+    }
+
+bad_width:
+    dprintk(XENLOG_G_ERR,
+            "%pv: vITS: bad read width %d r%d offset 0x%#08"PRIx32"\n",
+            v, dabt.size, dabt.reg, gits_reg);
+    domain_crash_synchronous();
+    return 0;
+
+read_as_zero_64:
+    if ( !vgic_reg64_check_access(dabt) ) goto bad_width;
+    *r = 0;
+    return 1;
+read_as_zero_32:
+    if ( dabt.size != DABT_WORD ) goto bad_width;
+read_as_zero:
+    *r = 0;
+    return 1;
+}
+
+/*
+ * GITS_BASER.Type[58:56], GITS_BASER.Entry_size[55:48]
+ * and GITS_BASER.Shareability[11:10] are read-only,
+ * Only flat table is supported. So GITS_BASER.Indirect[62]
+ * is RAZ/WI.
+ * Mask those fields while emulating GITS_BASER reg.
+ * Shareability is set to 0x0 (Reserved) which is fixed.
+ * TODO: Support shareability as fixed value is deprecated
+ */
+#define GITS_BASER_MASK  (~((0x7UL << GITS_BASER_TYPE_SHIFT)       | \
+                         (0x1UL << GITS_BASER_INDIRECT_SHIFT)      | \
+                         (0xffUL << GITS_BASER_ENTRY_SIZE_SHIFT)   | \
+                         (0x3UL << GITS_BASER_SHAREABILITY_SHIFT)))
+
+static int vgic_v3_gits_mmio_write(struct vcpu *v, mmio_info_t *info,
+                                   register_t r, void *priv)
+{
+    struct vgic_its *vits = v->domain->arch.vgic.vits;
+    struct hsr_dabt dabt = info->dabt;
+    int ret;
+    uint32_t gits_reg, sz, psz;
+    uint64_t val;
+
+    gits_reg = info->gpa - vits->gits_base;
+
+    DPRINTK("%pv: vITS: GITS_MMIO_WRITE offset 0x%"PRIx32"\n", v, gits_reg);
+    switch ( gits_reg )
+    {
+    case VREG32(GITS_CTLR):
+    {
+        uint32_t gits_ctlr;
+
+        if ( dabt.size != DABT_WORD ) goto bad_width;
+        vits_spin_lock(vits);
+        /*
+         * vITS is always quiescent, has no translations in progress and
+         * completed all operations. So set quiescent by default.
+         */
+        gits_ctlr = vits->ctlr;
+        vgic_reg32_update(&vits->ctlr,
+                         (r & GITS_CTLR_ENABLE) | GITS_CTLR_QUIESCENT, info);
+        /* If no change in GITS_CTRL.Enabled. Just return */ 
+        if ( !((gits_ctlr ^ vits->ctlr) && (vits->ctlr & GITS_CTLR_ENABLE)) )
+        {
+            vits_spin_unlock(vits);
+            return 1;
+        }
+        /*
+         * On GITS_CTLR.Enabled = 1, update cmdbaser and baser0 
+         * with cmd_base_save and baser0_save, if they are changed.
+         */
+        if ( vits->cmd_base_save ^ vits->cmd_base )
+        {
+            vits->cmd_base = vits->cmd_base_save;
+            if ( vits->cmd_base & GITS_BASER_VALID )
+            {
+                val = ((vits->cmd_base & GITS_BASER_PAGES_MASK_VAL) + 1) *
+                        SZ_4K;
+                vits->cmd_qsize = val;
+                atomic_set(&vits->cmd_read, 0);
+            }
+        }
+        if ( vits->baser0_save ^ vits->baser0 )
+        {
+            vits->baser0 = vits->baser0_save;
+            vits->dt_ipa = vits->baser0 & GITS_BASER_PA_MASK;
+            psz = (vits->baser0 >> GITS_BASER_PAGE_SIZE_SHIFT) &
+                   GITS_BASER_PAGE_SIZE_MASK_VAL;
+            if ( psz == GITS_BASER_PAGE_SIZE_4K_VAL )
+                sz = 4;
+            else if ( psz == GITS_BASER_PAGE_SIZE_16K_VAL )
+                sz = 16;
+            else
+                /* 0x11 and 0x10 are treated as 64K size */
+                sz = 64;
+
+            vits->dt_size = (vits->baser0 & GITS_BASER_PAGES_MASK_VAL) * sz *
+                             SZ_1K;
+        }
+        vits_spin_unlock(vits);
+        return 1;
+    }
+    case VREG32(GITS_IIDR):
+        /* RO -- write ignored */
+        goto write_ignore;
+    case VREG64(GITS_TYPER):
+        /* RO -- write ignored */
+        goto write_ignore;
+    case 0x0010 ... 0x007c:
+    case 0xc000 ... 0xffcc:
+        /* Implementation defined -- write ignored */
+        goto write_ignore;
+    case VREG64(GITS_CBASER):
+        if ( !vgic_reg64_check_access(dabt) ) goto bad_width;
+        vits_spin_lock(vits);
+        /* RO -- write ignored, if GITS_CTLR.Enabled = 1 */
+        if ( !(vits->ctlr & GITS_CTLR_ENABLE) )
+            vgic_reg64_update(&vits->cmd_base_save, r, info);
+        vits_spin_unlock(vits);
+        return 1;
+    case VREG64(GITS_CWRITER):
+        if ( !vgic_reg64_check_access(dabt) ) goto bad_width;
+        vits_spin_lock(vits);
+        /* Only Bits[19:5] are writable */
+        vgic_reg64_update(&vits->cmd_write, (r & 0xfffe0), info);
+        ret = 1;
+        /* CWRITER should be within command queue range */
+        if ( (vits->ctlr & GITS_CTLR_ENABLE) &&
+             (vits->cmd_write < vits->cmd_qsize) )
+            ret = vits_process_cmd(v, vits);
+        vits_spin_unlock(vits);
+        return ret;
+    case VREG64(GITS_CREADR):
+        /* RO -- write ignored */
+        goto write_ignore_64;
+    case 0x0098 ... 0x009c:
+    case 0x00a0 ... 0x00fc:
+    case 0x0140 ... 0xbffc:
+        /* Reserved -- write ignored */
+        goto write_ignore;
+    case VREG64(GITS_BASER0):
+        if ( !vgic_reg64_check_access(dabt) ) goto bad_width;
+        vits_spin_lock(vits);
+        /* RO -- write ignored if GITS_CTLR.Enable = 1 */
+        if ( !(vits->ctlr & GITS_CTLR_ENABLE) )
+        {
+            val = GITS_BASER0_INIT_VAL | (r & GITS_BASER_MASK);
+            vgic_reg64_update(&vits->baser0_save, val, info);
+        }
+        vits_spin_unlock(vits);
+        return 1;
+    case VRANGE64(GITS_BASER1, GITS_BASERN):
+        goto write_ignore_64;
+    case VRANGE32(GITS_PIDR7, GITS_PIDR0):
+        /* RO -- write ignored */
+        goto write_ignore_32;
+   default:
+        dprintk(XENLOG_G_ERR,
+                "%pv vITS: unhandled write r%d offset 0x%#08"PRIx32"\n",
+                v, dabt.reg, gits_reg);
+        return 0;
+    }
+
+bad_width:
+    dprintk(XENLOG_G_ERR,
+            "%pv: vITS: bad write width %d r%d offset 0x%#08"PRIx32"\n",
+            v, dabt.size, dabt.reg, gits_reg);
+    domain_crash_synchronous();
+    return 0;
+
+write_ignore_64:
+    if ( !vgic_reg64_check_access(dabt) ) goto bad_width;
+    return 1;
+write_ignore_32:
+    if ( dabt.size != DABT_WORD ) goto bad_width;
+    return 1;
+write_ignore:
+    return 1;
+}
+
+static const struct mmio_handler_ops vgic_gits_mmio_handler = {
+    .read  = vgic_v3_gits_mmio_read,
+    .write = vgic_v3_gits_mmio_write,
+};
+
 int vits_domain_init(struct domain *d)
 {
     struct vgic_its *vits;
@@ -535,6 +854,19 @@ int vits_domain_init(struct domain *d)
 
     for ( i = 0; i < vits_get_max_collections(d); i++ )
         vits->collections[i].target_address = INVALID_PADDR;
+
+    vits->baser0 = GITS_BASER0_INIT_VAL;
+    vits->baser0_save = GITS_BASER0_INIT_VAL;
+
+    /*
+     * Only one virtual ITS is provided to domain.
+     * Assign first physical ITS address to Dom0 virtual ITS.
+     */
+    vits->gits_base = vits_hw.phys_base;
+    vits->gits_size = vits_hw.phys_size;
+
+    register_mmio_handler(d, &vgic_gits_mmio_handler, vits->gits_base,
+                          SZ_64K, NULL);
 
     return 0;
 }

@@ -169,6 +169,15 @@ static inline int REG_RANK_NR(int b, uint32_t n)
 
 #define VGIC_REG_MASK(size) ((~0UL) >> (BITS_PER_LONG - ((1 << (size)) * 8)))
 
+static inline bool vgic_reg64_check_access(struct hsr_dabt dabt)
+{
+    /*
+     * 64 bits registers can be accessible using 32-bit and 64-bit unless
+     * stated otherwise (See 8.1.3 ARM IHI 0069A).
+     */
+    return ( dabt.size == DABT_DOUBLE_WORD || dabt.size == DABT_WORD );
+}
+
 /*
  * The check on the size supported by the register has to be done by
  * the caller of vgic_regN_*.

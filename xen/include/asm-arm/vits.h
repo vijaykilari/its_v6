@@ -24,14 +24,37 @@
 struct vgic_its
 {
    spinlock_t lock;
+   /*
+    * Emulation of BASER0. Used by guest to specify
+    * ITS device table memory.
+    */
+   uint64_t baser0;
+   /*
+    * Holds temparary GITS_BASER0 register value. This value
+    * is used to update baser0 after GITS_CTLR.Enabled is set to 1.
+    * This helps to support 32-bit updates on GITS_BASER0.
+    */
+   uint64_t baser0_save;
+   /* GICR ctlr register */
+   uint32_t ctlr;
    /* Command queue base */
-   paddr_t cmd_base;
+   uint64_t cmd_base;
+   /*
+    * Holds temparary GITS_CBASER register value. This value
+    * is used to update cmd_baser after GITS_CTLR.Enabled is set to 1.
+    * This helps to support 32-bit updates on GITS_CBASER.
+    */
+   uint64_t cmd_base_save;
    /* Command queue write pointer */
-   paddr_t cmd_write;
+   uint64_t cmd_write;
    /* Command queue read pointer */
    atomic_t cmd_read;
    /* Command queue size */
    unsigned long cmd_qsize;
+   /* ITS mmio physical base */
+   paddr_t gits_base;
+   /* ITS mmio physical size */
+   unsigned long gits_size;
    /* vITT device table ipa */
    paddr_t dt_ipa;
    /* vITT device table size */

@@ -53,6 +53,8 @@
 #define GITS_TYPER_IDBITS(r)		((((r) >> GITS_TYPER_IDBITS_SHIFT) & 0x1f) + 1)
 #define GITS_TYPER_PTA                  (1UL << 19)
 #define GITS_TYPER_HCC_SHIFT            (24)
+#define GITS_TYPER_PHYSICAL_LPIS        (1UL)
+#define GITS_TYPER_ITT_SIZE_SHIFT       (4)
 
 #define GITS_CBASER_VALID               (1UL << 63)
 #define GITS_CBASER_nC                  (1UL << 59)
@@ -65,6 +67,7 @@
 #define GITS_BASER_NR_REGS              8
 
 #define GITS_BASER_VALID                (1UL << 63)
+#define GITS_BASER_INDIRECT_SHIFT       (62)
 #define GITS_BASER_nC                   (1UL << 59)
 #define GITS_BASER_WaWb                 (5UL << 59)
 #define GITS_BASER_TYPE_SHIFT           (56)
@@ -80,6 +83,10 @@
 #define GITS_BASER_PAGE_SIZE_16K        (1UL << GITS_BASER_PAGE_SIZE_SHIFT)
 #define GITS_BASER_PAGE_SIZE_64K        (2UL << GITS_BASER_PAGE_SIZE_SHIFT)
 #define GITS_BASER_PAGE_SIZE_MASK       (3UL << GITS_BASER_PAGE_SIZE_SHIFT)
+#define GITS_BASER_PAGE_SIZE_4K_VAL     (0)
+#define GITS_BASER_PAGE_SIZE_16K_VAL    (1)
+#define GITS_BASER_PAGE_SIZE_MASK_VAL   (0x3)
+#define GITS_BASER_PAGES_MASK_VAL       (0xff)
 #define GITS_BASER_TYPE_NONE            0
 #define GITS_BASER_TYPE_DEVICE          1
 #define GITS_BASER_TYPE_VCPU            2
@@ -88,6 +95,7 @@
 #define GITS_BASER_TYPE_RESERVED5       5
 #define GITS_BASER_TYPE_RESERVED6       6
 #define GITS_BASER_TYPE_RESERVED7       7
+#define GITS_BASER_PA_MASK              (0xfffffffff000UL)
 
 /*
  * ITS commands
@@ -124,6 +132,8 @@ struct its_collection {
 struct vgic_its
 {
    spinlock_t lock;
+   /* Emulation of BASER0 */
+   paddr_t baser0;
    /* Command queue base */
    paddr_t cmd_base;
    /* Command queue write pointer */
@@ -132,6 +142,12 @@ struct vgic_its
    atomic_t cmd_read;
    /* Command queue size */
    unsigned long cmd_qsize;
+   /* ITS mmio physical base */
+   paddr_t gits_base;
+   /* ITS mmio physical size */
+   unsigned long gits_size;
+   /* GICR ctrl register */
+   uint32_t ctrl;
    /* vITT device table ipa */
    paddr_t dt_ipa;
    /* vITT device table size */

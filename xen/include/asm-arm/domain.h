@@ -112,6 +112,8 @@ struct arch_domain
         } rdist_regions[MAX_RDIST_COUNT];
         int nr_regions;                     /* Number of rdist regions */
         uint32_t rdist_stride;              /* Re-Distributor stride */
+        /* Virtual ITS */
+        struct vgic_its *vits;
 #endif
     } vgic;
 

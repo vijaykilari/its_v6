@@ -616,6 +616,16 @@ static hw_irq_controller gicv2_guest_irq_type = {
     .set_affinity = gicv2_irq_set_affinity,
 };
 
+static hw_irq_controller *gicv2_get_host_irq_type(unsigned int irq)
+{
+    return &gicv2_host_irq_type;
+}
+
+static hw_irq_controller *gicv2_get_guest_irq_type(unsigned int irq)
+{
+    return &gicv2_guest_irq_type;
+}
+
 static int __init gicv2_init(void)
 {
     int res;
@@ -698,8 +708,8 @@ const static struct gic_hw_operations gicv2_ops = {
     .save_state          = gicv2_save_state,
     .restore_state       = gicv2_restore_state,
     .dump_state          = gicv2_dump_state,
-    .gic_host_irq_type   = &gicv2_host_irq_type,
-    .gic_guest_irq_type  = &gicv2_guest_irq_type,
+    .gic_get_host_irq_type   = gicv2_get_host_irq_type,
+    .gic_get_guest_irq_type  = gicv2_get_guest_irq_type,
     .eoi_irq             = gicv2_eoi_irq,
     .deactivate_irq      = gicv2_dir_irq,
     .read_irq            = gicv2_read_irq,

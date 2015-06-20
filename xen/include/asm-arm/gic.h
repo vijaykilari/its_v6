@@ -317,10 +317,10 @@ struct gic_hw_operations {
     void (*dump_state)(const struct vcpu *);
 
     /* hw_irq_controller to enable/disable/eoi host irq */
-    hw_irq_controller *gic_host_irq_type;
+    const hw_irq_controller *(*gic_get_host_irq_type)(unsigned int irq);
 
     /* hw_irq_controller to enable/disable/eoi guest irq */
-    hw_irq_controller *gic_guest_irq_type;
+    const hw_irq_controller *(*gic_get_guest_irq_type)(unsigned int irq);
 
     /* End of Interrupt */
     void (*eoi_irq)(struct irq_desc *irqd);

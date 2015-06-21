@@ -52,6 +52,8 @@ bool_t is_assignable_irq(unsigned int irq);
 void init_IRQ(void);
 void init_secondary_IRQ(void);
 
+int route_lpi_to_guest(struct domain *d, unsigned int irq,
+                       const char *devname);
 int route_irq_to_guest(struct domain *d, unsigned int virq,
                        unsigned int irq, const char *devname);
 int release_guest_irq(struct domain *d, unsigned int irq);

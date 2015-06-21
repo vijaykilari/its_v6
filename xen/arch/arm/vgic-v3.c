@@ -1420,14 +1420,44 @@ static const struct mmio_handler_ops vgic_distr_mmio_handler = {
 
 static int vgic_v3_get_irq_priority(struct vcpu *v, unsigned int irq)
 {
-    int priority;
+    int priority = 0;
     unsigned long flags;
-    struct vgic_irq_rank *rank = vgic_rank_irq(v, irq);
+    struct vgic_irq_rank *rank;
 
-    vgic_lock_rank(v, rank, flags);
-    priority = vgic_byte_read(rank->ipriority[REG_RANK_INDEX(8,
+    if ( !gic_is_lpi(irq) )
+    {
+        rank = vgic_rank_irq(v, irq);
+
+        vgic_lock_rank(v, rank, flags);
+        priority = vgic_byte_read(rank->ipriority[REG_RANK_INDEX(8,
                                               irq, DABT_WORD)], 0, irq & 0x3);
-    vgic_unlock_rank(v, rank, flags);
+        vgic_unlock_rank(v, rank, flags);
+    }
+    else if ( vgic_is_domain_lpi(v->domain, irq) )
+    {
+        struct vgic_its *vits = v->domain->arch.vgic.vits;
+
+        /*
+         * Guest can receive LPI before availability of LPI property table.
+         * Hence assert is wrong.
+         * TODO: Handle LPI which is valid and does not have LPI property
+         * table entry and remove below assert.
+         */
+        ASSERT(irq  < vits->prop_size);
+
+        spin_lock_irqsave(&vits->prop_lock, flags);
+        /*
+         * LPI property table always starts from 0 (==8192 LPI).
+         * So, subtract 8192 from irq value.
+         */
+        priority = *((u8*)vits->prop_page + irq - FIRST_GIC_LPI);
+        /*
+         * Bits[7:2] specify priority with bits[1:0] of priority
+         * is set to zero. Hence only mask bits[7:2]
+         */
+        priority &= LPI_PRIORITY_MASK;
+        spin_unlock_irqrestore(&vits->prop_lock, flags);
+    }
 
     return priority;
 }

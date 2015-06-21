@@ -225,6 +225,9 @@ extern void gic_route_irq_to_xen(struct irq_desc *desc, const cpumask_t *cpu_mas
 extern int gic_route_irq_to_guest(struct domain *, unsigned int virq,
                                   struct irq_desc *desc,
                                   unsigned int priority);
+extern int gic_route_lpi_to_guest(struct domain *d,
+                                   struct irq_desc *desc,
+                                   unsigned int priority);
 
 /* Remove an IRQ passthrough to a guest */
 int gic_remove_irq_from_guest(struct domain *d, unsigned int virq,
@@ -281,9 +284,10 @@ extern void send_SGI_allbutself(enum gic_sgi sgi);
 /* print useful debug info */
 extern void gic_dump_info(struct vcpu *v);
 
-/* Number of interrupt lines */
+/* Number of interrupt lines (PPIs + SGIs + SPIs)*/
 extern unsigned int gic_number_lines(void);
-
+/* Check if irq is valid */
+bool_t gic_is_valid_irq(unsigned int irq);
 /* IRQ translation function for the device tree */
 int gic_irq_xlate(const u32 *intspec, unsigned int intsize,
                   unsigned int *out_hwirq, unsigned int *out_type);

@@ -72,6 +72,13 @@ bool_t gic_is_lpi(unsigned int irq)
     return (irq >= FIRST_GIC_LPI && irq < gic_nr_irq_ids());
 }
 
+/* Validates PPIs/SGIs/SPIs/LPIs supported */
+bool_t gic_is_valid_irq(unsigned int irq)
+{
+    return (irq < gic_hw_ops->info->nr_lines || gic_is_lpi(irq));
+}
+
+/* Returns number of PPIs/SGIs/SPIs supported */
 unsigned int gic_number_lines(void)
 {
     return gic_hw_ops->info->nr_lines;
@@ -134,7 +141,8 @@ void gic_route_irq_to_xen(struct irq_desc *desc, const cpumask_t *cpu_mask,
                           unsigned int priority)
 {
     ASSERT(priority <= 0xff);     /* Only 8 bits of priority */
-    ASSERT(desc->irq < gic_number_lines());/* Can't route interrupts that don't exist */
+    /* Can't route interrupts that don't exist */
+    ASSERT(gic_is_valid_irq(desc->irq));
     ASSERT(test_bit(_IRQ_DISABLED, &desc->status));
     ASSERT(spin_is_locked(&desc->lock));
 
@@ -181,6 +189,26 @@ out:
     vgic_unlock_rank(v_target, rank, flags);
 
     return res;
+}
+
+int gic_route_lpi_to_guest(struct domain *d, struct irq_desc *desc,
+                           unsigned int priority)
+{
+    ASSERT(spin_is_locked(&desc->lock));
+
+    desc->handler = get_guest_hw_irq_controller(desc->irq);
+    set_bit(_IRQ_GUEST, &desc->status);
+
+    /* Set cpumask to current processor */
+    gic_set_irq_properties(desc, cpumask_of(smp_processor_id()), priority);
+
+    /*
+     * Enable LPI by default. Each pLPI is enabled and routed
+     * when device is assigned.
+     */
+    desc->handler->enable(desc);
+
+    return 0;
 }
 
 /* This function only works with SPIs for now */
@@ -663,7 +691,7 @@ void gic_interrupt(struct cpu_user_regs *regs, int is_fiq)
         /* Reading IRQ will ACK it */
         irq = gic_hw_ops->read_irq();
 
-        if ( likely(irq >= 16 && irq < 1020) )
+        if ( likely((irq >= 16 && irq < 1020) || gic_is_lpi(irq)) )
         {
             local_irq_enable();
             do_IRQ(regs, irq, is_fiq);

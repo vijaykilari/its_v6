@@ -470,6 +470,21 @@ static void its_flush_and_invalidate_prop(struct irq_desc *desc, u8 *cfg)
     its_send_inv(its_dev, vid);
 }
 
+void its_set_lpi_properties(struct irq_desc *desc,
+                            const cpumask_t *cpu_mask,
+                            unsigned int priority)
+{
+    unsigned long flags;
+    u8 *cfg;
+
+    spin_lock_irqsave(&its_lock, flags);
+    cfg = gic_rdists->prop_page + desc->irq - FIRST_GIC_LPI;
+    *cfg = (*cfg & 3) | (priority & LPI_PRIORITY_MASK) ;
+
+    its_flush_and_invalidate_prop(desc, cfg);
+    spin_unlock_irqrestore(&its_lock, flags);
+}
+
 static void its_set_lpi_state(struct irq_desc *desc, int enable)
 {
     u8 *cfg;
@@ -923,7 +938,7 @@ int its_assign_device(struct domain *d, u32 vdevid, u32 pdevid)
         ASSERT(i < (1 << its_data.eventID_bits));
 
         plpi = its_get_plpi(pdev, i);
-        /* TODO: Route lpi */
+        route_lpi_to_guest(d, plpi, "LPI");
     }
 
     return 0;

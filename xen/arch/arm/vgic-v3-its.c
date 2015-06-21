@@ -358,7 +358,7 @@ static int vits_process_int(struct vcpu *v, struct vgic_its *vits,
     DPRINTK("%pv: vITS: INT: Device 0x%"PRIx32" id %"PRIu32"\n",
             v, dev_id, event);
 
-    /* TODO: Inject LPI */
+    vgic_vcpu_inject_lpi(v->domain, dev_id, event);
 
     return 0;
 }

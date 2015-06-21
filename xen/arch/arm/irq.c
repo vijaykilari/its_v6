@@ -214,7 +214,7 @@ int request_irq(unsigned int irq, unsigned int irqflags,
      * which interrupt is which (messes up the interrupt freeing
      * logic etc).
      */
-    if ( irq >= nr_irqs )
+    if ( !gic_is_valid_irq(irq) )
         return -EINVAL;
     if ( !handler )
         return -EINVAL;
@@ -272,11 +272,16 @@ void do_IRQ(struct cpu_user_regs *regs, unsigned int irq, int is_fiq)
 
         set_bit(_IRQ_INPROGRESS, &desc->status);
 
-        /*
-         * The irq cannot be a PPI, we only support delivery of SPIs to
-         * guests.
-	 */
-        vgic_vcpu_inject_spi(info->d, info->virq);
+#ifdef HAS_GICV3
+        if ( gic_is_lpi(irq) )
+            vgic_vcpu_raise_lpi(info->d, desc);
+        else
+#endif
+            /*
+             * The irq cannot be a PPI, we only support delivery of SPIs to
+             * guests
+             */
+            vgic_vcpu_inject_spi(info->d, info->virq);
         goto out_no_end;
     }
 
@@ -361,6 +366,9 @@ void release_irq(unsigned int irq, const void *dev_id)
     /* Wait to make sure it's not being used on another CPU */
     do { smp_mb(); } while ( test_bit(_IRQ_INPROGRESS, &desc->status) );
 
+    if ( gic_is_lpi(irq) )
+        xfree(desc->msi_desc);
+
     if ( action->free_on_release )
         xfree(action);
 }
@@ -442,9 +450,97 @@ err:
 
 bool_t is_assignable_irq(unsigned int irq)
 {
-    /* For now, we can only route SPIs to the guest */
-    return ((irq >= NR_LOCAL_IRQS) && (irq < gic_number_lines()));
+    /* For now, we can only route SPI/LPIs to the guest */
+    return (((irq >= NR_LOCAL_IRQS) && (irq < gic_number_lines())) ||
+              gic_is_lpi(irq));
 }
+
+#ifdef HAS_GICV3
+/*
+ * Route an LPI to a specific guest.
+ */
+int route_lpi_to_guest(struct domain *d, unsigned int plpi, const char *devname)
+{
+    struct irqaction *action;
+    struct irq_guest *info;
+    struct irq_desc *desc;
+    unsigned long flags;
+    int retval = 0;
+
+    if ( !gic_is_lpi(plpi) )
+    {
+        printk(XENLOG_G_ERR "Only LPI can be routed \n");
+        return -EINVAL;
+    }
+
+    action = xmalloc(struct irqaction);
+    if ( !action )
+        return -ENOMEM;
+
+    info = xmalloc(struct irq_guest);
+    if ( !info )
+    {
+        xfree(action);
+        return -ENOMEM;
+    }
+    info->d = d;
+
+    action->dev_id = info;
+    action->name = devname;
+    action->free_on_release = 1;
+
+    desc = irq_to_desc(plpi);
+    spin_lock_irqsave(&desc->lock, flags);
+
+    ASSERT(desc->msi_desc != NULL);
+
+    if ( desc->arch.type == DT_IRQ_TYPE_INVALID )
+    {
+        printk(XENLOG_G_ERR "LPI %u has not been configured\n", plpi);
+        retval = -EIO;
+        goto out;
+    }
+
+    /* If the IRQ is already used by same domain, do not setup again.*/
+    if ( desc->action != NULL )
+    {
+        struct domain *ad = irq_get_domain(desc);
+
+        if ( test_bit(_IRQ_GUEST, &desc->status) && d == ad )
+        {
+            printk(XENLOG_G_ERR
+                   "d%u: LPI %u is already assigned to domain %u\n",
+                   d->domain_id, plpi, d->domain_id);
+            retval = -EBUSY;
+            goto out;
+        }
+    }
+
+    retval = __setup_irq(desc, 0, action);
+    if ( retval )
+        goto out;
+
+    retval = gic_route_lpi_to_guest(d, desc, GIC_PRI_IRQ);
+
+    spin_unlock_irqrestore(&desc->lock, flags);
+
+    if ( retval )
+    {
+        release_irq(desc->irq, info);
+        goto free_info;
+    }
+
+    return 0;
+
+out:
+    spin_unlock_irqrestore(&desc->lock, flags);
+    xfree(action);
+free_info:
+    xfree(info);
+
+    return retval;
+}
+#endif
 
 /*
  * Route an IRQ to a specific guest.

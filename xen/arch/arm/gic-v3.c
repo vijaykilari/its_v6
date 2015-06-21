@@ -471,9 +471,9 @@ static inline uint64_t gicv3_mpidr_to_affinity(int cpu)
              MPIDR_AFFINITY_LEVEL(mpidr, 0));
 }
 
-static void gicv3_set_irq_properties(struct irq_desc *desc,
-                                     const cpumask_t *cpu_mask,
-                                     unsigned int priority)
+static void gicv3_set_line_properties(struct irq_desc *desc,
+                                      const cpumask_t *cpu_mask,
+                                      unsigned int priority)
 {
     uint32_t cfg, actual, edgebit;
     uint64_t affinity;
@@ -530,6 +530,16 @@ static void gicv3_set_irq_properties(struct irq_desc *desc,
         writeb_relaxed(priority, GICD + GICD_IPRIORITYR + irq);
 
     spin_unlock(&gicv3.lock);
+}
+
+static void gicv3_set_irq_properties(struct irq_desc *desc,
+                                     const cpumask_t *cpu_mask,
+                                     unsigned int priority)
+{
+    if ( gic_is_lpi(desc->irq) )
+        its_set_lpi_properties(desc, cpu_mask, priority);
+    else
+        gicv3_set_line_properties(desc, cpu_mask, priority);
 }
 
 static void __init gicv3_dist_init(void)

@@ -31,7 +31,9 @@
 
 #include <asm/mmio.h>
 #include <asm/gic.h>
+#include <asm/gic-its.h>
 #include <asm/vgic.h>
+#include <asm/vits.h>
 
 static inline struct vgic_irq_rank *vgic_get_rank(struct vcpu *v, int rank)
 {
@@ -266,13 +268,41 @@ struct vcpu *vgic_get_target_vcpu(struct vcpu *v, unsigned int virq)
 
 static int vgic_get_virq_priority(struct vcpu *v, unsigned int virq)
 {
-    struct vgic_irq_rank *rank = vgic_rank_irq(v, virq);
+    struct vgic_irq_rank *rank;
     unsigned long flags;
-    int priority;
+    int priority = 0;
 
-    vgic_lock_rank(v, rank, flags);
-    priority = rank->priority[virq & INTERRUPT_RANK_MASK];
-    vgic_unlock_rank(v, rank, flags);
+    if ( !gic_is_lpi(virq) )
+    {
+        rank = vgic_rank_irq(v, virq);
+
+        vgic_lock_rank(v, rank, flags);
+        priority = rank->priority[virq & INTERRUPT_RANK_MASK];
+        vgic_unlock_rank(v, rank, flags);
+    }
+    else if ( vgic_is_domain_lpi(v->domain, virq) )
+    {
+        /*
+         * Guest can receive LPI before availability of LPI property table.
+         * Hence assert is wrong.
+         * TODO: Handle LPI which is valid and does not have LPI property
+         * table entry and remove below assert.
+         */
+        ASSERT(virq < v->domain->arch.vgic.prop_size);
+
+        spin_lock_irqsave(&v->domain->arch.vgic.prop_lock, flags);
+        /*
+         * LPI property table always starts from 0 (==8192 LPI).
+         * So, subtract 8192 from irq value.
+         */
+        priority = *((u8*)v->domain->arch.vgic.prop_page + virq - FIRST_GIC_LPI);
+        /*
+         * Bits[7:2] specify priority with bits[1:0] of priority
+         * is set to zero. Hence only mask bits[7:2]
+         */
+        priority &= LPI_PRIORITY_MASK;
+        spin_unlock_irqrestore(&v->domain->arch.vgic.prop_lock, flags);
+    }
 
     return priority;
 }
@@ -544,6 +574,69 @@ void vgic_vcpu_inject_spi(struct domain *d, unsigned int virq)
     v = vgic_get_target_vcpu(d->vcpu[0], virq);
     vgic_vcpu_inject_irq(v, virq);
 }
+
+#ifdef CONFIG_HAS_GICV3
+void vgic_vcpu_inject_lpi(struct domain *d, unsigned int vdevid,
+                          unsigned int eventID)
+{
+    struct vdevice_table dt_entry;
+    struct vitt vitt_entry;
+    uint32_t col_id;
+
+    if ( vits_get_vdevice_entry(d, vdevid, &dt_entry) )
+    {
+        dprintk(XENLOG_WARNING,
+                "Failed to read dt entry for dev 0x%"PRIx32" ..dropping\n",
+                vdevid);
+        return;
+    }
+
+    if ( dt_entry.vitt_ipa == INVALID_PADDR )
+    {
+        dprintk(XENLOG_WARNING,
+                "Event %"PRId32" of dev 0x%"PRIx32" is invalid..dropping\n",
+                eventID, vdevid);
+        return;
+    }
+
+    if ( vits_get_vitt_entry(d, vdevid, eventID, &vitt_entry) )
+    {
+        dprintk(XENLOG_WARNING,
+                "Event %"PRId32" of dev 0x%"PRIx32" is invalid..dropping\n",
+                eventID, vdevid);
+        return;
+    }
+
+    col_id = vitt_entry.vcollection;
+
+    if ( !vitt_entry.valid || !is_valid_collection(d, col_id) ||
+         !vgic_is_domain_lpi(d, vitt_entry.vlpi) )
+    {
+        dprintk(XENLOG_WARNING,
+                "vlpi %"PRId32" for dev 0x%"PRIx32" is not valid..dropping\n",
+                vitt_entry.vlpi, vdevid);
+        return;
+    }
+
+    /*
+     * We don't have vlpi to plpi mapping and hence we cannot
+     * have target on which corresponding vlpi is enabled.
+     * So for now we are always injecting vlpi on vcpu0.
+     * (See vgic_vcpu_inject_lpi() function) and so we get pending_irq
+     * structure on vcpu0.
+     * TODO: Get correct target vcpu
+     */
+    vgic_vcpu_inject_irq(d->vcpu[0], vitt_entry.vlpi);
+}
+
+void vgic_vcpu_raise_lpi(struct domain *d, struct irq_desc *desc)
+{
+    struct its_device *dev = irqdesc_get_its_device(desc);
+    unsigned int eventID = irqdesc_get_lpi_event(desc);
+
+    vgic_vcpu_inject_lpi(d, dev->virt_device_id, eventID);
+}
+#endif
 
 void arch_evtchn_inject(struct vcpu *v)
 {

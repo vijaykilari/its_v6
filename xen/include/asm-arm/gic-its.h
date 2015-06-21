@@ -303,6 +303,9 @@ int its_init(struct rdist_prop *rdists);
 int its_cpu_init(void);
 int its_add_device(u32 devid, u32 nr_ites, struct dt_device_node *dt_its);
 int its_assign_device(struct domain *d, u32 vdevid, u32 pdevid);
+void its_set_lpi_properties(struct irq_desc *desc,
+                            const cpumask_t *cpu_mask,
+                            unsigned int priority);
 
 #endif /* __ASM_ARM_GIC_ITS_H__ */
 /*

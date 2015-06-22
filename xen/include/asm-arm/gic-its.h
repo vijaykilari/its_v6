@@ -299,6 +299,8 @@ int its_assign_device(struct domain *d, u32 vdevid, u32 pdevid);
 void its_set_lpi_properties(struct irq_desc *desc,
                             const cpumask_t *cpu_mask,
                             unsigned int priority);
+int its_update_phandle(void *fdt, const struct dt_property *prop);
+int its_make_dt_node(const struct domain *d, void *fdt);
 
 #endif /* __ASM_ARM_GIC_ITS_H__ */
 /*

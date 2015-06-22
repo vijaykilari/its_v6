@@ -1105,6 +1105,14 @@ static void gicv3_irq_set_affinity(struct irq_desc *desc, const cpumask_t *mask)
     spin_unlock(&gicv3.lock);
 }
 
+static int gicv3_update_its_phandle(void *fdt, const struct dt_property *prop)
+{
+    if ( its_enabled )
+        return its_update_phandle(fdt, prop);
+
+    return 0;
+}
+
 static int gicv3_make_hwdom_dt_node(const struct domain *d,
                                     const struct dt_device_node *node,
                                     void *fdt)
@@ -1123,6 +1131,10 @@ static int gicv3_make_hwdom_dt_node(const struct domain *d,
     }
 
     res = fdt_property(fdt, "compatible", compatible, len);
+    if ( res )
+        return res;
+
+    res = fdt_property(fdt, "ranges", NULL, 0);
     if ( res )
         return res;
 
@@ -1157,8 +1169,10 @@ static int gicv3_make_hwdom_dt_node(const struct domain *d,
 
     res = fdt_property(fdt, "reg", new_cells, len);
     xfree(new_cells);
+    if ( res )
+        return res;
 
-    return res;
+    return its_make_dt_node(d, fdt);
 }
 
 static const hw_irq_controller gicv3_host_irq_type = {
@@ -1384,6 +1398,7 @@ static const struct gic_hw_operations gicv3_ops = {
     .read_vmcr_priority  = gicv3_read_vmcr_priority,
     .read_apr            = gicv3_read_apr,
     .secondary_init      = gicv3_secondary_cpu_init,
+    .update_its_phandle  = gicv3_update_its_phandle,
     .make_hwdom_dt_node  = gicv3_make_hwdom_dt_node,
 };
 

@@ -27,6 +27,8 @@
 #include <xen/sched.h>
 #include <xen/errno.h>
 #include <xen/delay.h>
+#include <xen/device_tree.h>
+#include <xen/libfdt/libfdt.h>
 #include <xen/list.h>
 #include <xen/sizes.h>
 #include <xen/vmap.h>
@@ -1296,6 +1298,124 @@ static void its_cpu_init_collection(void)
     }
 
     spin_unlock(&its_lock);
+}
+
+int its_make_dt_node(const struct domain *d, void *fdt)
+{
+    struct its_node *its;
+    const struct dt_device_node *node;
+    const void *compatible = NULL;
+    u32 len;
+    __be32 *new_cells, *tmp;
+    int res = 0;
+
+    /* Will pass only first ITS node info */
+    its = list_first_entry(&its_nodes, struct its_node, entry);
+    if ( !its )
+    {
+        dprintk(XENLOG_ERR, "ITS node not found\n");
+        return -FDT_ERR_XEN(ENOENT);
+    }
+
+    node = its->dt_node;
+
+    compatible = dt_get_property(node, "compatible", &len);
+    if ( !compatible )
+    {
+        dprintk(XENLOG_ERR, "Can't find compatible property for the its node\n");
+        return -FDT_ERR_XEN(ENOENT);
+    }
+
+    res = fdt_begin_node(fdt, "gic-its");
+    if ( res )
+        return res;
+
+    res = fdt_property(fdt, "compatible", compatible, len);
+    if ( res )
+        return res;
+
+    res = fdt_property(fdt, "msi-controller", NULL, 0);
+    if ( res )
+        return res;
+
+    len = dt_cells_to_size(dt_n_addr_cells(node) + dt_n_size_cells(node));
+
+    new_cells = xzalloc_bytes(len);
+    if ( new_cells == NULL )
+        return -FDT_ERR_XEN(ENOMEM);
+    tmp = new_cells;
+
+    dt_set_range(&tmp, node, its->phys_base, its->phys_size);
+
+    res = fdt_property(fdt, "reg", new_cells, len);
+    xfree(new_cells);
+    if ( res )
+        return res;
+
+    if ( node->phandle )
+    {
+        res = fdt_property_cell(fdt, "phandle", node->phandle);
+        if ( res )
+            return res;
+    }
+
+    res = fdt_end_node(fdt);
+
+    return res;
+}
+
+static int its_find_compatible_phandle(fdt32_t msi_parent_phandle)
+{
+    struct its_node *its;
+    const struct dt_device_node *node;
+    fdt32_t phandle;
+
+    list_for_each_entry(its, &its_nodes, entry)
+    {
+        node = its->dt_node;
+
+        if ( node->phandle )
+        {
+            phandle = cpu_to_fdt32(node->phandle);
+            if ( phandle == msi_parent_phandle )
+               return 0;
+        }
+    }
+
+    return -FDT_ERR_XEN(ENOENT);
+}
+
+int its_update_phandle(void *fdt, const struct dt_property *prop)
+{
+    struct its_node *its;
+    const struct dt_device_node *node;
+    fdt32_t phandle, msi_parent_phandle;
+
+    memcpy(&msi_parent_phandle, prop->value, sizeof(msi_parent_phandle));
+
+    /* chech if msi-parent phandle is ITS */
+    if ( its_find_compatible_phandle(msi_parent_phandle) )
+        return -FDT_ERR_XEN(ENOENT);
+
+    /* Only first ITS node phandle is considered */
+    its = list_first_entry(&its_nodes, struct its_node, entry);
+    if ( !its )
+    {
+        dprintk(XENLOG_ERR, "ITS node not found\n");
+        return -FDT_ERR_XEN(ENOENT);
+    }
+
+    node = its->dt_node;
+
+    if ( node->phandle )
+    {
+        phandle = cpu_to_fdt32(node->phandle);
+        fdt_property(fdt, prop->name, (void *)&phandle, sizeof(phandle));
+
+        return 0;
+    }
+
+    return -FDT_ERR_XEN(ENOENT);
 }
 
 static int its_force_quiescent(void __iomem *base)

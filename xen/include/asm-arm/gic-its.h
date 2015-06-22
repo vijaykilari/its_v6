@@ -21,6 +21,7 @@
 #include <asm/gic_v3_defs.h>
 #include <xen/rbtree.h>
 
+#define MAPC_ITT_IPA_SHIFT              8
 /*
  * ITS registers, offsets from ITS_base
  */
@@ -59,6 +60,7 @@
 #define GITS_CBASER_InnerShareable      (1UL << 10)
 #define GITS_CBASER_SHAREABILITY_MASK   (3UL << 10)
 #define GITS_CBASER_CACHEABILITY_MASK   (7UL << 59)
+#define GITS_CBASER_PA_MASK             (0xfffffffff000UL)
 
 #define GITS_BASER_NR_REGS              8
 
@@ -121,10 +123,21 @@ struct its_collection {
  */
 struct vgic_its
 {
+   spinlock_t lock;
+   /* Command queue base */
+   paddr_t cmd_base;
+   /* Command queue write pointer */
+   paddr_t cmd_write;
+   /* Command queue read pointer */
+   atomic_t cmd_read;
+   /* Command queue size */
+   unsigned long cmd_qsize;
    /* vITT device table ipa */
    paddr_t dt_ipa;
    /* vITT device table size */
    uint64_t dt_size;
+   /* collections mapped */
+   struct its_collection *collections;
 };
 
 /* ITS command structure */
@@ -318,6 +331,8 @@ int its_add_device(u32 devid, u32 nr_ites, struct dt_device_node *dt_its);
 int its_assign_device(struct domain *d, u32 vdevid, u32 pdevid);
 int vits_access_guest_table(struct domain *d, paddr_t entry, void *addr,
                             uint32_t size, bool_t set);
+int vits_domain_init(struct domain *d);
+void vits_domain_free(struct domain *d);
 int vits_get_vitt_entry(struct domain *d, uint32_t devid,
                         uint32_t event, struct vitt *entry);
 int vits_get_vdevice_entry(struct domain *d, uint32_t devid,

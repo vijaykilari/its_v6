@@ -828,6 +828,53 @@ static const struct mmio_handler_ops vgic_gits_mmio_handler = {
     .write_handler = vgic_v3_gits_mmio_write,
 };
 
+/*
+ * Map the 64K ITS translation space in guest.
+ * This is required purely for device smmu writes.
+*/
+
+static int vits_map_translation_space(struct domain *d)
+{
+    uint64_t addr, size;
+    int ret;
+
+    ASSERT(is_domain_direct_mapped(d));
+
+    addr = d->arch.vgic.vits->gits_base + SZ_64K;
+    size = SZ_64K;
+
+    /* For DomU translation space is mapped 1:1.
+     *
+     * As per spec IHI0069A, 8.1.3 there is undefined behavior when CPU
+     * writes to this register with wrong access size.
+     * Currently the page table are shared between the processor and the SMMU,
+     * So that means that a domain will be able to deadlock the processor
+     * and therefore the whole platform.
+     *
+     * TODO: A CPU should *never* be able to write to the GITS_TRANSLATER
+     * register. We have to make sure a guest cannot directly write to the HW.
+     * So we should never expose GITS_TRANSLATER into the processor page table.
+     * Which means we should not share page tables between the processor
+     * and the SMMU
+     *
+     * TODO: Also Handle DomU mapping
+     */
+    ret = map_mmio_regions(d,
+                           paddr_to_pfn(addr & PAGE_MASK),
+                           DIV_ROUND_UP(size, PAGE_SIZE),
+                           paddr_to_pfn(addr & PAGE_MASK));
+
+    if ( ret )
+    {
+         dprintk(XENLOG_G_ERR, "vITS: Unable to map to"
+                 " 0x%"PRIx64" - 0x%"PRIx64" to dom%d\n",
+                 addr & PAGE_MASK, PAGE_ALIGN(addr + size) - 1,
+                 d->domain_id);
+    }
+
+    return ret;
+}
+
 int vits_domain_init(struct domain *d)
 {
     struct vgic_its *vits;
@@ -882,7 +929,7 @@ int vits_domain_init(struct domain *d)
 
     register_mmio_handler(d, &vgic_gits_mmio_handler, vits->gits_base, SZ_64K);
 
-    return 0;
+    return vits_map_translation_space(d);
 }
 
 void vits_domain_free(struct domain *d)

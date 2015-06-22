@@ -121,6 +121,8 @@ struct vgic_ops {
     int (*vcpu_init)(struct vcpu *v);
     /* Domain specific initialization of vGIC */
     int (*domain_init)(struct domain *d);
+    /* Free domain specific resources */
+    void (*domain_free)(struct domain *d);
     /* Get priority for a given irq stored in vgic structure */
     int (*get_irq_priority)(struct vcpu *v, unsigned int irq);
     /* Get the target vcpu for a given virq. The rank lock is already taken

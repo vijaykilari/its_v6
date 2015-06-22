@@ -23,10 +23,21 @@
  */
 struct vgic_its
 {
+   spinlock_t lock;
+   /* Command queue base */
+   paddr_t cmd_base;
+   /* Command queue write pointer */
+   paddr_t cmd_write;
+   /* Command queue read pointer */
+   atomic_t cmd_read;
+   /* Command queue size */
+   unsigned long cmd_qsize;
    /* vITT device table ipa */
    paddr_t dt_ipa;
    /* vITT device table size */
    uint64_t dt_size;
+   /* collections mapped */
+   struct its_collection *collections;
 };
 
 /*
@@ -50,6 +61,9 @@ struct vitt {
     uint32_t vlpi;
 };
 
+bool_t is_valid_collection(struct domain *d, uint16_t col);
+int vits_domain_init(struct domain *d);
+void vits_domain_free(struct domain *d);
 int vgic_access_guest_memory(struct domain *d, paddr_t gipa, void *addr,
                              uint32_t size, bool_t set);
 int vits_get_vitt_entry(struct domain *d, uint32_t devid, uint32_t event,

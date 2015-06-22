@@ -1830,6 +1830,11 @@ static int vgic_v3_domain_init(struct domain *d)
     d->arch.vgic.ctlr = VGICD_CTLR_DEFAULT;
 
     spin_lock_init(&d->arch.vgic.prop_lock);
+    if ( is_hardware_domain(d) && vgic_v3_hw.its_support )
+    {
+        if ( vits_domain_init(d) )
+            return -ENODEV;
+    }
 
     if ( is_hardware_domain(d) && vgic_v3_hw.its_support )
     {
@@ -1843,9 +1848,16 @@ static int vgic_v3_domain_init(struct domain *d)
     return 0;
 }
 
+void vgic_v3_domain_free(struct domain *d)
+{
+    if ( is_hardware_domain(d) && vgic_v3_hw.its_support )
+        vits_domain_free(d);
+}
+
 static const struct vgic_ops v3_ops = {
     .vcpu_init   = vgic_v3_vcpu_init,
     .domain_init = vgic_v3_domain_init,
+    .domain_free = vgic_v3_domain_free,
     .emulate_sysreg  = vgic_v3_emulate_sysreg,
     /*
      * We use both AFF1 and AFF0 in (v)MPIDR. Thus, the max number of CPU

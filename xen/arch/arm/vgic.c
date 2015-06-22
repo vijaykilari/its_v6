@@ -198,6 +198,9 @@ void domain_vgic_free(struct domain *d)
     if ( vgic_is_lpi_supported(d) && d->arch.vgic.prop_page != NULL )
         free_xenheap_pages(d->arch.vgic.prop_page,
                            get_order_from_bytes(d->arch.vgic.prop_size));
+
+    if ( d->arch.vgic.handler->domain_free )
+        d->arch.vgic.handler->domain_free(d);
 }
 
 int vcpu_vgic_init(struct vcpu *v)

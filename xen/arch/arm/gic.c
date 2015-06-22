@@ -758,6 +758,12 @@ void __cpuinit init_maintenance_interrupt(void)
                 "irq-maintenance", NULL);
 }
 
+void gic_update_msi_phandle(void *fdt, const struct dt_property *prop)
+{
+    if ( gic_lpi_supported() )
+        gic_hw_ops->update_its_phandle(fdt, prop);
+}
+
 int gic_make_hwdom_dt_node(const struct domain *d,
                            const struct dt_device_node *node,
                            void *fdt)

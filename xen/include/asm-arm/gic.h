@@ -151,6 +151,7 @@
 
 #ifndef __ASSEMBLY__
 #include <xen/device_tree.h>
+#include <xen/libfdt/libfdt.h>
 #include <xen/irq.h>
 #include <asm-arm/vgic.h>
 
@@ -369,6 +370,7 @@ struct gic_hw_operations {
     int (*secondary_init)(void);
     int (*make_hwdom_dt_node)(const struct domain *d,
                               const struct dt_device_node *node, void *fdt);
+    int (*update_its_phandle)(void *fdt, const struct dt_property *prop);
 };
 
 void register_gic_ops(const struct gic_hw_operations *ops);
@@ -376,6 +378,7 @@ int gic_make_hwdom_dt_node(const struct domain *d,
                            const struct dt_device_node *node,
                            void *fdt);
 bool_t gic_is_lpi(unsigned int irq);
+void gic_update_msi_phandle(void *fdt, const struct dt_property *prop);
 
 #endif /* __ASSEMBLY__ */
 #endif

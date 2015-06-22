@@ -356,6 +356,7 @@ struct its_device *irqdesc_get_its_device(struct irq_desc *desc);
 void irqdesc_set_its_device(struct irq_desc *desc, struct its_device *dev);
 bool_t is_valid_collection(struct domain *d, uint32_t col);
 unsigned int its_get_nr_event_ids(void);
+int its_make_dt_node(const struct domain *d, void *fdt);
 int its_init(struct rdist_prop *rdists);
 int its_cpu_init(void);
 int its_add_device(u32 devid, u32 nr_ites, struct dt_device_node *dt_its);
@@ -363,6 +364,7 @@ int its_assign_device(struct domain *d, u32 vdevid, u32 pdevid);
 void its_set_lpi_properties(struct irq_desc *desc,
                             const cpumask_t *cpu_mask,
                             unsigned int priority);
+int its_update_phandle(void *fdt, const struct dt_property *prop);
 int vits_access_guest_table(struct domain *d, paddr_t entry, void *addr,
                             uint32_t size, bool_t set);
 int vits_domain_init(struct domain *d);

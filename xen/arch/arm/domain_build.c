@@ -468,6 +468,20 @@ static int write_properties(struct domain *d, struct kernel_info *kinfo,
             continue;
         }
 
+        /*
+         * Replace all msi-parent phandle references to single ITS node
+         * generated for Dom0
+         */
+        if ( dt_property_name_is_equal(prop, "msi-parent") )
+        {
+            DPRINT(" Set msi-parent with ITS phandle (if ITS available)\n");
+            res = gic_update_msi_phandle(kinfo->fdt, prop);
+            if ( res )
+                return res;
+
+            continue;
+        }
+
         res = fdt_property(kinfo->fdt, prop->name, prop_data, prop_len);
 
         if ( res )

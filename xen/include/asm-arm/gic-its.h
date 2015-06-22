@@ -59,6 +59,7 @@
 #define GITS_CBASER_InnerShareable      (1UL << 10)
 #define GITS_CBASER_SHAREABILITY_MASK   (3UL << 10)
 #define GITS_CBASER_CACHEABILITY_MASK   (7UL << 59)
+#define GITS_CBASER_PA_MASK             (0xfffffffff000UL)
 
 #define GITS_BASER_NR_REGS              8
 
@@ -137,6 +138,7 @@ typedef union {
         u64 res5;
     } mapd;
     struct __packed {
+#define MAPC_ITT_IPA_SHIFT 8
         u8 cmd;
         u8 res1[7];
         u64 res2;

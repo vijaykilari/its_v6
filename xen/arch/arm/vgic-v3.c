@@ -1603,14 +1603,24 @@ static int vgic_v3_domain_init(struct domain *d)
     d->arch.vgic.ctlr = VGICD_CTLR_DEFAULT;
 
     if ( is_hardware_domain(d) && vgic_v3_hw.lpi_support )
-        d->arch.vgic.its_enabled = 1;
+    {
+        if ( !vits_domain_init(d) )
+            d->arch.vgic.its_enabled = 1;
+    }
 
     return 0;
+}
+
+void vgic_v3_domain_free(struct domain *d)
+{
+    if ( is_hardware_domain(d) && vgic_v3_hw.lpi_support )
+        vits_domain_free(d);
 }
 
 static const struct vgic_ops v3_ops = {
     .vcpu_init   = vgic_v3_vcpu_init,
     .domain_init = vgic_v3_domain_init,
+    .domain_free = vgic_v3_domain_free,
     .get_irq_priority = vgic_v3_get_irq_priority,
     .get_target_vcpu  = vgic_v3_get_target_vcpu,
     .emulate_sysreg  = vgic_v3_emulate_sysreg,

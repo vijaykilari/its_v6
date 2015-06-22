@@ -174,6 +174,9 @@ void domain_vgic_free(struct domain *d)
     xfree(d->arch.vgic.shared_irqs);
     xfree(d->arch.vgic.pending_irqs);
     xfree(d->arch.vgic.allocated_irqs);
+
+    if ( d->arch.vgic.handler->domain_free )
+        d->arch.vgic.handler->domain_free(d);
 }
 
 int vcpu_vgic_init(struct vcpu *v)

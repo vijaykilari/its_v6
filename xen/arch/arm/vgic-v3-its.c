@@ -23,12 +23,14 @@
 #include <xen/sched.h>
 #include <xen/sizes.h>
 #include <xen/domain_page.h>
+#include <xen/delay.h>
 #include <asm/device.h>
 #include <asm/mmio.h>
 #include <asm/io.h>
 #include <asm/atomic.h>
 #include <asm/gic_v3_defs.h>
 #include <asm/gic.h>
+#include <asm/gic-its.h>
 #include <asm/vgic.h>
 #include <asm/gic-its.h>
 #include <asm/vits.h>
@@ -299,6 +301,22 @@ static int vits_process_discard(struct vcpu *v, struct vgic_its *vits,
 static int vits_process_inv(struct vcpu *v, struct vgic_its *vits,
                             its_cmd_block *virt_cmd)
 {
+    unsigned long flags;
+    int state;
+
+    /* Do no complete INV command until lpi property table
+     * is under update by tasklet
+     */
+    do {
+        spin_lock_irqsave(&v->domain->arch.vgic.prop_lock, flags);
+        state = v->domain->arch.vgic.lpi_prop_table_state;
+        spin_unlock_irqrestore(&v->domain->arch.vgic.prop_lock, flags);
+        if ( state != LPI_TAB_IN_PROGRESS )
+            break;
+        cpu_relax();
+        udelay(1);
+    } while ( 1 );
+
     /* Ignored */
     DPRINTK("%pv vITS: INV: dev_id 0x%"PRIx32" id %"PRIu32"\n",
             v, virt_cmd->inv.devid, virt_cmd->inv.event);

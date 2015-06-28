@@ -26,10 +26,14 @@
 #include <xen/irq.h>
 #include <xen/sched.h>
 #include <xen/sizes.h>
+#include <xen/tasklet.h>
 #include <asm/current.h>
 #include <asm/mmio.h>
 #include <asm/gic_v3_defs.h>
+#include <asm/gic.h>
+#include <asm/gic-its.h>
 #include <asm/vgic.h>
+#include <asm/vits.h>
 #include <asm/vgic-emul.h>
 
 /*
@@ -159,6 +163,252 @@ static void vgic_store_irouter(struct domain *d, struct vgic_irq_rank *rank,
     rank->vcpu[offset] = new_vcpu->vcpu_id;
 }
 
+static void vgic_v3_disable_lpi(struct vcpu *v, uint32_t vlpi)
+{
+    struct pending_irq *p;
+    struct vcpu *v_target = v->domain->vcpu[0];
+
+    p = irq_to_pending(v_target, vlpi);
+    if ( test_bit(GIC_IRQ_GUEST_ENABLED, &p->status) )
+    {
+        clear_bit(GIC_IRQ_GUEST_ENABLED, &p->status);
+        gic_remove_from_queues(v_target, vlpi);
+    }
+}
+
+static void vgic_v3_enable_lpi(struct vcpu *v, uint32_t vlpi)
+{
+    struct pending_irq *p;
+    unsigned long flags;
+    struct vcpu *v_target = vgic_get_target_vcpu(v, vlpi);
+
+    p = irq_to_pending(v_target, vlpi);
+
+    set_bit(GIC_IRQ_GUEST_ENABLED, &p->status);
+
+    spin_lock_irqsave(&v_target->arch.vgic.lock, flags);
+
+    if ( !list_empty(&p->inflight) &&
+         !test_bit(GIC_IRQ_GUEST_VISIBLE, &p->status) )
+        gic_raise_guest_irq(v_target, vlpi, p->priority);
+
+    spin_unlock_irqrestore(&v_target->arch.vgic.lock, flags);
+}
+
+static int vgic_v3_gits_lpi_mmio_read(struct vcpu *v, mmio_info_t *info,
+                                      register_t *r, void *priv)
+{
+    uint32_t offset;
+    void *addr;
+    unsigned long flags;
+    struct hsr_dabt dabt = info->dabt;
+
+    spin_lock_irqsave(&v->domain->arch.vgic.prop_lock, flags);
+
+    offset = info->gpa -
+                 (v->domain->arch.vgic.propbase & GICR_PROPBASER_PA_MASK);
+    addr = (void *)((u8 *)v->domain->arch.vgic.prop_page + offset);
+
+    switch (dabt.size)
+    {
+    case DABT_DOUBLE_WORD:
+        *r = *((u64 *)addr);
+        break;
+    case DABT_WORD:
+        *r = *((u32 *)addr);
+        break;
+    case DABT_HALF_WORD:
+        *r = *((u16 *)addr);
+        break;
+    default:
+        *r = *((u8 *)addr);
+    }
+    spin_unlock_irqrestore(&v->domain->arch.vgic.prop_lock, flags);
+
+    return 1;
+}
+
+static void vgic_v3_gits_update_lpis_state(struct vcpu *v, uint32_t vid,
+                                           uint32_t size)
+{
+    uint32_t i;
+    uint8_t cfg, *p;
+    bool_t enable;
+
+    ASSERT(spin_is_locked(&v->domain->arch.vgic.prop_lock));
+
+    p = ((u8 *)v->domain->arch.vgic.prop_page + vid);
+
+    for ( i = 0 ; i < size; i++ )
+    {
+        cfg = *p;
+        enable = cfg & LPI_PROP_ENABLED;
+
+        /* LPIs start from 8192, So add 8192 to point to correct LPI number */
+        if ( !enable )
+            vgic_v3_enable_lpi(v, vid + FIRST_GIC_LPI);
+        else
+            vgic_v3_disable_lpi(v, vid + FIRST_GIC_LPI);
+
+        p++;
+        vid++;
+    }
+}
+
+static int vgic_v3_gits_lpi_mmio_write(struct vcpu *v, mmio_info_t *info,
+                                       register_t r, void *priv)
+{
+    uint32_t offset;
+    uint8_t *p, *val, i, iter;
+    bool_t enable;
+    unsigned long flags;
+    struct hsr_dabt dabt = info->dabt;
+
+    spin_lock_irqsave(&v->domain->arch.vgic.prop_lock, flags);
+
+    offset = info->gpa -
+                 (v->domain->arch.vgic.propbase & GICR_PROPBASER_PA_MASK);
+
+    p = ((u8 *)v->domain->arch.vgic.prop_page + offset);
+    val = (u8 *)&r;
+    iter = 1 << dabt.size;
+
+    for ( i = 0 ; i < iter; i++ )
+    {
+        enable = (*p & *val) & LPI_PROP_ENABLED;
+
+        if ( !enable )
+            vgic_v3_enable_lpi(v, offset + FIRST_GIC_LPI);
+        else
+            vgic_v3_disable_lpi(v, offset + FIRST_GIC_LPI);
+
+        /* Update virtual prop page */
+        val++;
+        p++;
+        offset++;
+    }
+
+    spin_unlock_irqrestore(&v->domain->arch.vgic.prop_lock, flags);
+
+    return 1;
+}
+
+static const struct mmio_handler_ops vgic_gits_lpi_mmio_handler = {
+    .read  = vgic_v3_gits_lpi_mmio_read,
+    .write = vgic_v3_gits_lpi_mmio_write,
+};
+
+static void lpi_prop_table_tasklet_func(unsigned long data)
+{
+    unsigned long flags;
+    uint32_t i, id_bits, lpi_size;
+    struct domain *d = (struct domain *)data;
+    struct vcpu *v = d->vcpu[0];
+
+    spin_lock_irqsave(&v->domain->arch.vgic.prop_lock, flags);
+
+    id_bits = ((v->domain->arch.vgic.propbase & GICR_PROPBASER_IDBITS_MASK) +
+               1);
+    lpi_size = min_t(unsigned int, v->domain->arch.vgic.prop_size, 1 << id_bits);
+
+    for ( i = 0; i < lpi_size / PAGE_SIZE; i++ )
+    {
+        if ( ((i * PAGE_SIZE) + PAGE_SIZE) < v->domain->arch.vgic.nr_lpis )
+            vgic_v3_gits_update_lpis_state(v, (i * PAGE_SIZE), PAGE_SIZE);
+    }
+
+    v->domain->arch.vgic.lpi_prop_table_state = LPI_TAB_UPDATED;
+    spin_unlock_irqrestore(&v->domain->arch.vgic.prop_lock, flags);
+}
+
+static int vgic_v3_map_lpi_prop(struct vcpu *v)
+{
+    paddr_t gaddr, addr;
+    unsigned long mfn, flags;
+    uint32_t id_bits, vgic_id_bits, lpi_size;
+    int i;
+
+    gaddr = v->domain->arch.vgic.propbase & GICR_PROPBASER_PA_MASK;
+    id_bits = ((v->domain->arch.vgic.propbase & GICR_PROPBASER_IDBITS_MASK) +
+               1);
+
+    vgic_id_bits = get_count_order(v->domain->arch.vgic.nr_lpis +
+                                   FIRST_GIC_LPI);
+
+    spin_lock_irqsave(&v->domain->arch.vgic.prop_lock, flags);
+
+    /*
+     * Here we limit the size of LPI property table to the number of LPIs
+     * that domain supports.
+     */
+    lpi_size = 1 << vgic_id_bits;
+
+    /*
+     * Allocate Virtual LPI Property table.
+     * TODO: To re-use guest property table
+     * TODO: Free prog_page table that is already allocated.
+     */
+    v->domain->arch.vgic.prop_page =
+        alloc_xenheap_pages(get_order_from_bytes(lpi_size), 0);
+    if ( !v->domain->arch.vgic.prop_page )
+    {
+        spin_unlock_irqrestore(&v->domain->arch.vgic.prop_lock, flags);
+        printk(XENLOG_G_ERR
+               "d%d: vITS: Fail to allocate LPI Prop page\n",
+               v->domain->domain_id);
+        return 0;
+    }
+
+    v->domain->arch.vgic.prop_size  = lpi_size;
+
+    /*
+     * lpi_size is always aligned to PAGE_SIZE because it is generated from
+     * vgic_id_bits which is computed using get_count_order.
+     *
+     * Consider minimum size of Xen supported size(vgic.nr_lpis) or
+     * guest allocated size LPI property table.
+     */
+    lpi_size = min_t(unsigned int, v->domain->arch.vgic.prop_size, 1 << id_bits);
+
+    addr = gaddr;
+    for ( i = 0; i < lpi_size / PAGE_SIZE; i++ )
+    {
+        vgic_access_guest_memory(v->domain, addr,
+                                 (void *)(v->domain->arch.vgic.prop_page +
+                                 (i * PAGE_SIZE)), PAGE_SIZE, 0);
+
+        /* Unmap LPI property table. */
+        mfn = gmfn_to_mfn(v->domain, paddr_to_pfn(addr));
+        if ( unlikely(!mfn_valid(mfn)) )
+        {
+            spin_unlock_irqrestore(&v->domain->arch.vgic.prop_lock, flags);
+            printk(XENLOG_G_ERR
+                   "vITS: Invalid propbaser address %"PRIx64" for domain %d\n",
+                   addr, v->domain->domain_id);
+            return 0;
+        }
+        guest_physmap_remove_page(v->domain, paddr_to_pfn(addr), mfn, 0);
+        addr += PAGE_SIZE;
+    }
+
+    /*
+     * Each re-distributor shares a common LPI configuration table
+     * So one set of mmio handlers to manage configuration table is enough
+     *
+     * Register mmio handlers for this region.
+     */
+    register_mmio_handler(v->domain, &vgic_gits_lpi_mmio_handler,
+                          gaddr, v->domain->arch.vgic.prop_size, NULL);
+
+    v->domain->arch.vgic.lpi_prop_table_state = LPI_TAB_IN_PROGRESS;
+    spin_unlock_irqrestore(&v->domain->arch.vgic.prop_lock, flags);
+
+    /* Schedule tasklet */
+    tasklet_schedule(&v->domain->arch.vgic.lpi_prop_table_tasklet);
+
+    return 1;
+}
+
 static int __vgic_v3_rdistr_rd_mmio_read(struct vcpu *v, mmio_info_t *info,
                                          uint32_t gicr_reg,
                                          register_t *r)
@@ -168,9 +418,11 @@ static int __vgic_v3_rdistr_rd_mmio_read(struct vcpu *v, mmio_info_t *info,
     switch ( gicr_reg )
     {
     case VREG32(GICR_CTLR):
-        /* We have not implemented LPI's, read zero */
-        goto read_as_zero_32;
-
+        if ( dabt.size != DABT_WORD ) goto bad_width;
+        vgic_lock(v);
+        *r = vgic_reg32_extract(v->arch.vgic.gicr_ctlr, info);
+        vgic_unlock(v);
+        return 1;
     case VREG32(GICR_IIDR):
         if ( dabt.size != DABT_WORD ) goto bad_width;
         *r = vgic_reg32_extract(GICV3_GICR_IIDR_VAL, info);
@@ -190,6 +442,12 @@ static int __vgic_v3_rdistr_rd_mmio_read(struct vcpu *v, mmio_info_t *info,
 
         if ( v->arch.vgic.flags & VGIC_V3_RDIST_LAST )
             typer |= GICR_TYPER_LAST;
+
+        /* Set Physical LPIs support */
+        if ( vgic_is_lpi_supported(v->domain) )
+            typer |= GICR_TYPER_PLPIS;
+        /* Provide vcpu number as target address */
+        typer |= (v->vcpu_id << GICR_TYPER_PROCESSOR_SHIFT);
 
         *r = vgic_reg64_extract(typer, info);
 
@@ -222,12 +480,40 @@ static int __vgic_v3_rdistr_rd_mmio_read(struct vcpu *v, mmio_info_t *info,
         goto read_reserved;
 
     case VREG64(GICR_PROPBASER):
-        /* LPI's not implemented */
-        goto read_as_zero_64;
+    {
+        uint32_t val;
+
+        if ( !vgic_reg64_check_access(dabt) ) goto bad_width;
+        if ( !vgic_is_lpi_supported(v->domain) )
+            goto read_as_zero_64;
+
+        vgic_lock(v);
+        val = v->arch.vgic.gicr_ctlr;
+        vgic_unlock(v);
+
+        vgic_lpi_prop_lock(v);
+        if ( val & GICR_CTLR_ENABLE_LPIS )
+            *r = vgic_reg64_extract(v->domain->arch.vgic.propbase, info);
+        else
+            *r = vgic_reg64_extract(v->domain->arch.vgic.propbase_save, info);
+        vgic_lpi_prop_unlock(v);
+        return 1;
+    }
 
     case VREG64(GICR_PENDBASER):
-        /* LPI's not implemented */
-        goto read_as_zero_64;
+        if ( !vgic_reg64_check_access(dabt) ) goto bad_width;
+        if ( !vgic_is_lpi_supported(v->domain) )
+            goto read_as_zero_64;
+        vgic_lock(v);
+        /* PTZ field is RAZ */
+        if ( v->arch.vgic.gicr_ctlr & GICR_CTLR_ENABLE_LPIS )
+            *r = vgic_reg64_extract(v->arch.vgic.pendbase &
+                                    ~GICR_PENDBASER_PTZ_MASK, info);
+        else
+            *r = vgic_reg64_extract(v->arch.vgic.pendbase_save &
+                                    ~GICR_PENDBASER_PTZ_MASK, info);
+        vgic_unlock(v);
+        return 1;
 
     case 0x0080:
         goto read_reserved;
@@ -329,13 +615,54 @@ static int __vgic_v3_rdistr_rd_mmio_write(struct vcpu *v, mmio_info_t *info,
                                           register_t r)
 {
     struct hsr_dabt dabt = info->dabt;
+    uint32_t val;
 
     switch ( gicr_reg )
     {
     case VREG32(GICR_CTLR):
-        /* LPI's not implemented */
+        if ( dabt.size != DABT_WORD ) goto bad_width;
+        if ( !vgic_is_lpi_supported(v->domain) )
         goto write_ignore_32;
+        /*
+         * Enable LPI's for ITS. Direct injection of LPI
+         * by writing to GICR_{SET,CLR}LPIR is not supported.
+         */
+        vgic_lock(v);
+        val = v->arch.vgic.gicr_ctlr & GICR_CTLR_ENABLE_LPIS;
+        vgic_reg32_update(&v->arch.vgic.gicr_ctlr,
+                         (r & GICR_CTLR_ENABLE_LPIS), info);
 
+        /* If no change in GICR_CTRL.EnableLPIs. Just return */ 
+        if ( !((val ^ v->arch.vgic.gicr_ctlr) &&
+             (v->arch.vgic.gicr_ctlr & GICR_CTLR_ENABLE_LPIS)) )
+        {
+            vgic_unlock(v);
+            return 1;
+        }
+        vgic_unlock(v);
+
+        vgic_lpi_prop_lock(v);
+        /*
+         * On GICR_CTLR.EnableLPIs = 1, update pendbaser and propbase
+         * with pendbase_save and propbase_save if they are changed.
+         */
+        if ( v->arch.vgic.pendbase_save ^ v->arch.vgic.pendbase )
+             v->arch.vgic.pendbase = v->arch.vgic.pendbase_save;
+        if ( v->domain->arch.vgic.propbase_save ^ v->domain->arch.vgic.propbase )
+        {
+            if ( v->vcpu_id == 0 )
+            {
+                v->domain->arch.vgic.propbase =
+                    v->domain->arch.vgic.propbase_save;
+                vgic_lpi_prop_unlock(v);
+                return vgic_v3_map_lpi_prop(v);
+            }
+            else
+                v->domain->arch.vgic.propbase =
+                    v->domain->arch.vgic.propbase_save;
+        }
+        vgic_lpi_prop_unlock(v);
+        return 1;
     case VREG32(GICR_IIDR):
         /* RO */
         goto write_ignore_32;
@@ -370,12 +697,51 @@ static int __vgic_v3_rdistr_rd_mmio_write(struct vcpu *v, mmio_info_t *info,
         goto write_reserved;
 
     case VREG64(GICR_PROPBASER):
-        /* LPI is not implemented */
-        goto write_ignore_64;
+        if ( !vgic_reg64_check_access(dabt) ) goto bad_width;
+        if ( !vgic_is_lpi_supported(v->domain) )
+            goto write_ignore_64;
+        /*
+         * As per spec, updating GICR_PROPBASER when GICR_CTLR.EnableLPIs = 1
+         * is unpredictable. Here we ignore the update.
+         */
+        vgic_lock(v);
+        val = v->arch.vgic.gicr_ctlr;
+        vgic_unlock(v);
+
+        if ( val & GICR_CTLR_ENABLE_LPIS )
+            goto write_ignore_64;
+        vgic_lpi_prop_lock(v);
+        /*
+         * LPI configuration tables are shared across cpus. Should be same.
+         *
+         * Allow updating on propbase only for vcpu0 once with below check.
+         * TODO: Manage change in property table.
+         */
+        if ( v->vcpu_id == 0 && v->domain->arch.vgic.propbase_save != 0 )
+        {
+            printk(XENLOG_G_WARNING
+                   "%pv: vGICR: Updating LPI propbase is not allowed\n", v);
+            vgic_lpi_prop_unlock(v);
+            return 1;
+        }
+        vgic_reg64_update(&v->domain->arch.vgic.propbase_save, r, info);
+        vgic_lpi_prop_unlock(v);
+        return 1;
 
     case VREG64(GICR_PENDBASER):
-        /* LPI is not implemented */
-        goto write_ignore_64;
+        if ( !vgic_reg64_check_access(dabt) ) goto bad_width;
+        if ( !vgic_is_lpi_supported(v->domain) )
+            goto write_ignore_64;
+        /* Just hold pendbaser value for guest read */
+        vgic_lock(v);
+        if ( v->arch.vgic.gicr_ctlr & GICR_CTLR_ENABLE_LPIS )
+        {
+            vgic_unlock(v);
+            goto write_ignore_64;
+        }
+        vgic_reg64_update(&v->arch.vgic.pendbase_save, r, info);
+        vgic_unlock(v);
+        return 1;
 
     case 0x0080:
         goto write_reserved;
@@ -441,7 +807,7 @@ bad_width:
     return 0;
 
 write_ignore_64:
-    if ( vgic_reg64_check_access(dabt) ) goto bad_width;
+    if ( !vgic_reg64_check_access(dabt) ) goto bad_width;
     return 1;
 
 write_ignore_32:
@@ -899,11 +1265,7 @@ static int vgic_v3_distr_mmio_read(struct vcpu *v, mmio_info_t *info,
 
     case VREG32(GICD_TYPER):
     {
-        /*
-         * Number of interrupt identifier bits supported by the GIC
-         * Stream Protocol Interface
-         */
-        unsigned int irq_bits = get_count_order(vgic_num_irq_lines(v->domain));
+        unsigned int irqs;
         /*
          * Number of processors that may be used as interrupt targets when ARE
          * bit is zero. The maximum is 8.
@@ -916,7 +1278,15 @@ static int vgic_v3_distr_mmio_read(struct vcpu *v, mmio_info_t *info,
         typer = ((ncpus - 1) << GICD_TYPER_CPUS_SHIFT |
                  DIV_ROUND_UP(v->domain->arch.vgic.nr_spis, 32));
 
-        typer |= (irq_bits - 1) << GICD_TYPER_ID_BITS_SHIFT;
+        if ( vgic_is_lpi_supported(v->domain) )
+        {
+            irqs = v->domain->arch.vgic.nr_lpis + FIRST_GIC_LPI;
+            typer |= GICD_TYPER_LPIS_SUPPORTED;
+        }
+        else
+            irqs = vgic_num_irq_lines(v->domain);
+
+        typer |= (get_count_order(irqs) - 1) << GICD_TYPER_ID_BITS_SHIFT;
 
         *r = vgic_reg32_extract(typer, info);
 
@@ -1458,6 +1828,17 @@ static int vgic_v3_domain_init(struct domain *d)
     }
 
     d->arch.vgic.ctlr = VGICD_CTLR_DEFAULT;
+
+    spin_lock_init(&d->arch.vgic.prop_lock);
+
+    if ( is_hardware_domain(d) && vgic_v3_hw.its_support )
+    {
+        if ( vits_domain_init(d) )
+            return -ENODEV;
+
+        tasklet_init(&d->arch.vgic.lpi_prop_table_tasklet,
+                     lpi_prop_table_tasklet_func, (unsigned long)d);
+    }
 
     return 0;
 }

@@ -12,6 +12,7 @@
 #include <public/hvm/params.h>
 #include <xen/serial.h>
 #include <xen/hvm/iommu.h>
+#include <xen/tasklet.h>
 
 struct hvm_domain
 {
@@ -116,6 +117,26 @@ struct arch_domain
         /* Virtual ITS */
         struct vgic_its *vits;
 #endif
+        /* LPI propbase */
+        uint64_t propbase;
+        /*
+         * Holds temparary GICR_PROPBASER register value. This value
+         * is used to update propbase after GICR_CTLR.EnableLPIs is set to 1.
+         * This helps to support 32-bit updates on GICR_PROPBASER
+         */
+        uint64_t propbase_save;
+        /* Virtual LPI property table */
+        void *prop_page;
+        /* Virtual LPI property size */
+        uint32_t prop_size;
+        /* spinlock to protect lpi property table */
+        spinlock_t prop_lock;
+#define LPI_TAB_IN_PROGRESS    1
+#define LPI_TAB_UPDATED        2
+        /* lpi property table state */
+        int lpi_prop_table_state;
+        /* Tasklet for parsing lpi property table */
+        struct tasklet lpi_prop_table_tasklet;
     } vgic;
 
     struct vuart {
@@ -248,6 +269,16 @@ struct arch_vcpu
 
         /* GICv3: redistributor base and flags for this vCPU */
         paddr_t rdist_base;
+        /* GICv3-ITS: LPI pending table for this vCPU */
+        uint64_t pendbase;
+        /*
+         * Holds temparary GICR_PENDBASER register value. This value
+         * is used to update propbase after GICR_CTLR.EnableLPIs is set to 1.
+         * This helps to support 32-bit updates on GICR_PENDBASER.
+         */
+        uint64_t pendbase_save;
+        /* GICv3: Redistributor control register */
+        uint32_t gicr_ctlr;
 #define VGIC_V3_RDIST_LAST  (1 << 0)        /* last vCPU of the rdist */
         uint8_t flags;
     } vgic;

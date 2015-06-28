@@ -143,6 +143,9 @@ struct vgic_ops {
 #define vgic_lock_rank(v, r, flags)   spin_lock_irqsave(&(r)->lock, flags)
 #define vgic_unlock_rank(v, r, flags) spin_unlock_irqrestore(&(r)->lock, flags)
 
+#define vgic_lpi_prop_lock(v)   spin_lock_irq(&(v)->domain->arch.vgic.prop_lock)
+#define vgic_lpi_prop_unlock(v) spin_unlock_irq(&(v)->domain->arch.vgic.prop_lock)
+
 /*
  * Rank containing GICD_<FOO><n> for GICD_<FOO> with
  * <b>-bits-per-interrupt

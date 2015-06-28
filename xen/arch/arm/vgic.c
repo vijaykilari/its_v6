@@ -67,6 +67,12 @@ bool_t vgic_is_lpi_supported(struct domain *d)
     return (d->arch.vgic.nr_lpis != 0);
 }
 
+static bool_t vgic_is_domain_lpi(struct domain *d, unsigned int lpi)
+{
+    return ((lpi >= FIRST_GIC_LPI) &&
+            (lpi < (d->arch.vgic.nr_lpis + FIRST_GIC_LPI)));
+}
+
 static void vgic_init_pending_irq(struct pending_irq *p, unsigned int virq)
 {
     INIT_LIST_HEAD(&p->inflight);
@@ -186,6 +192,10 @@ void domain_vgic_free(struct domain *d)
     xfree(d->arch.vgic.shared_irqs);
     xfree(d->arch.vgic.pending_irqs);
     xfree(d->arch.vgic.allocated_irqs);
+
+    if ( vgic_is_lpi_supported(d) && d->arch.vgic.prop_page != NULL )
+        free_xenheap_pages(d->arch.vgic.prop_page,
+                           get_order_from_bytes(d->arch.vgic.prop_size));
 }
 
 int vcpu_vgic_init(struct vcpu *v)
@@ -232,9 +242,21 @@ static struct vcpu *__vgic_get_target_vcpu(struct vcpu *v, unsigned int virq)
 struct vcpu *vgic_get_target_vcpu(struct vcpu *v, unsigned int virq)
 {
     struct vcpu *v_target;
-    struct vgic_irq_rank *rank = vgic_rank_irq(v, virq);
+    struct vgic_irq_rank *rank;
     unsigned long flags;
 
+    /*
+     * We don't have vlpi to plpi mapping and hence we cannot
+     * have target on which corresponding vlpi is enabled.
+     * So for now we are always injecting vlpi on vcpu0.
+     * (See vgic_vcpu_inject_lpi() function) and so we get pending_irq
+     * structure on vcpu0.
+     * TODO: Get correct target vcpu
+     */
+    if ( vgic_is_domain_lpi(v->domain, virq) )
+        return v->domain->vcpu[0];
+
+    rank = vgic_rank_irq(v, virq);
     vgic_lock_rank(v, rank, flags);
     v_target = __vgic_get_target_vcpu(v, virq);
     vgic_unlock_rank(v, rank, flags);

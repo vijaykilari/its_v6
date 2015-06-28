@@ -114,6 +114,7 @@
 
 #define LPI_PROP_ENABLED                (1 << 0)
 #define LPI_PROP_GROUP1                 (1 << 1)
+#define LPI_PRIORITY_MASK               (0xfc)
 
 /*
  * Collection structure - just an ID, and a redistributor address to

@@ -36,6 +36,14 @@ struct vgic_its
    atomic_t cmd_read;
    /* Command queue size */
    unsigned long cmd_qsize;
+   /* LPI propbase */
+   paddr_t propbase;
+   /* Virtual LPI property table */
+   void *prop_page;
+   /* Virtual LPI property size */
+   uint32_t prop_size;
+   /* spinlock to protect lpi property table */
+   spinlock_t prop_lock;
    /* ITS mmio physical base */
    paddr_t gits_base;
    /* ITS mmio physical size */

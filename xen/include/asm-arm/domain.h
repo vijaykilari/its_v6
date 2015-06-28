@@ -116,6 +116,7 @@ struct arch_domain
         uint32_t rdist_stride;              /* Re-Distributor stride */
         /* Virtual ITS */
         struct vgic_its *vits;
+        uint32_t gicr_ctlr;
 #endif
     } vgic;
 
@@ -249,6 +250,8 @@ struct arch_vcpu
 
         /* GICv3: redistributor base and flags for this vCPU */
         paddr_t rdist_base;
+        /* GICv3-ITS: LPI pending table for this vCPU */
+        paddr_t pendbase;
 #define VGIC_V3_RDIST_LAST  (1 << 0)        /* last vCPU of the rdist */
         uint8_t flags;
     } vgic;

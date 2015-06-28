@@ -115,6 +115,7 @@
 
 #define LPI_PROP_ENABLED                (1 << 0)
 #define LPI_PROP_GROUP1                 (1 << 1)
+#define LPI_PRIORITY_MASK               (0xfc)
 
 /*
  * Collection structure - just an ID, and a redistributor address to
@@ -148,6 +149,14 @@ struct vgic_its
    unsigned long gits_size;
    /* GICR ctrl register */
    uint32_t ctrl;
+   /* LPI propbase */
+   paddr_t propbase;
+   /* Virtual LPI property table */
+   void *prop_page;
+   /* Virtual LPI property size */
+   uint32_t prop_size;
+   /* spinlock to protect lpi property table */
+   spinlock_t prop_lock;
    /* vITT device table ipa */
    paddr_t dt_ipa;
    /* vITT device table size */

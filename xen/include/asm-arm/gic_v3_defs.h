@@ -48,6 +48,7 @@
 /* Additional bits in GICD_TYPER defined by GICv3 */
 #define GICD_TYPE_ID_BITS_SHIFT      19
 #define GICD_TYPE_ID_BITS_MASK       0x1f
+#define GICD_TYPE_LPIS               (0x1UL << 17)
 
 #define GICD_TYPER_LPIS_SUPPORTED    (1U << 17)
 #define GICD_CTLR_RWP                (1UL << 31)
@@ -125,14 +126,17 @@
 #define GICR_PROPBASER_WaWb              (5U << 7)
 #define GICR_PROPBASER_CACHEABILITY_MASK (7U << 7)
 #define GICR_PROPBASER_IDBITS_MASK       (0x1f)
+#define GICR_PROPBASER_PA_MASK           (0xfffffffff000UL)
 #define GICR_TYPER_PLPIS             (1U << 0)
 #define GICR_TYPER_VLPIS             (1U << 1)
 #define GICR_TYPER_LAST              (1U << 4)
+#define GICR_TYPER_PROCESSOR_SHIFT   (8)
 
 #define GICR_PENDBASER_InnerShareable    (1U << 10)
 #define GICR_PENDBASER_SHAREABILITY_MASK (3UL << 10)
 #define GICR_PENDBASER_nC                (1U << 7)
 #define GICR_PENDBASER_CACHEABILITY_MASK (7U << 7)
+#define GICR_PENDBASER_PTZ_MASK          (1UL << 62)
 
 #define DEFAULT_PMR_VALUE            0xff
 

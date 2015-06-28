@@ -109,6 +109,7 @@ struct arch_domain
 #ifdef HAS_GICV3
         /* Virtual ITS */
         struct vgic_its *vits;
+        uint32_t gicr_ctlr;
         /* GIC V3 addressing */
         /* List of contiguous occupied by the redistributors */
         struct vgic_rdist_region {
@@ -251,6 +252,8 @@ struct arch_vcpu
 
         /* GICv3: redistributor base and flags for this vCPU */
         paddr_t rdist_base;
+        /* GICv3-ITS: LPI pending table for this vCPU */
+        paddr_t pendbase;
 #define VGIC_V3_RDIST_LAST  (1 << 0)        /* last vCPU of the rdist */
         uint8_t flags;
     } vgic;

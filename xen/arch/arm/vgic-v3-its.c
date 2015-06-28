@@ -28,6 +28,7 @@
 #include <asm/io.h>
 #include <asm/gic_v3_defs.h>
 #include <asm/gic.h>
+#include <asm/gic-its.h>
 #include <asm/vgic.h>
 #include <asm/gic-its.h>
 #include <asm/atomic.h>
@@ -908,6 +909,7 @@ int vits_domain_init(struct domain *d)
     vits = d->arch.vgic.vits;
 
     spin_lock_init(&vits->lock);
+    spin_lock_init(&vits->prop_lock);
 
     vits->collections = xzalloc_array(struct its_collection,
                                       vits_get_max_collections(d));
@@ -933,6 +935,8 @@ int vits_domain_init(struct domain *d)
 
 void vits_domain_free(struct domain *d)
 {
+   free_xenheap_pages(d->arch.vgic.vits->prop_page,
+                      get_order_from_bytes(d->arch.vgic.vits->prop_size));
    xfree(d->arch.vgic.vits->collections);
    xfree(d->arch.vgic.vits);
 }

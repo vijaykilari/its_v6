@@ -94,6 +94,7 @@ static LIST_HEAD(its_nodes);
 static DEFINE_SPINLOCK(its_lock);
 static struct rdist_prop  *gic_rdists;
 static struct rb_root rb_its_dev;
+static struct gic_its_info its_data;
 static DEFINE_SPINLOCK(rb_its_dev_lock);
 
 #define gic_data_rdist()    (this_cpu(rdist))
@@ -1312,6 +1313,8 @@ static int its_probe(struct dt_device_node *node)
     its->phys_size = its_size;
     typer = readl_relaxed(its_base + GITS_TYPER);
     its->ite_size = ((typer >> 4) & 0xf) + 1;
+    its_data.eventid_bits = GITS_TYPER_IDBITS(typer);
+    its_data.dev_bits = GITS_TYPER_DEVBITS(typer);
 
     its->cmd_base = xzalloc_bytes(ITS_CMD_QUEUE_SZ);
     if ( !its->cmd_base )
@@ -1402,6 +1405,7 @@ int its_cpu_init(void)
 
 int __init its_init(struct rdist_prop *rdists)
 {
+    struct its_node *its;
     struct dt_device_node *np = NULL;
 
     static const struct dt_device_match its_device_ids[] __initconst =
@@ -1423,6 +1427,13 @@ int __init its_init(struct rdist_prop *rdists)
     gic_rdists = rdists;
     its_alloc_lpi_tables();
     its_lpi_init(rdists->id_bits);
+
+    its = list_first_entry(&its_nodes, struct its_node, entry);
+    if ( !its )
+        return -ENOMEM;
+
+    vits_setup_hw(its_data.dev_bits, its_data.eventid_bits,
+                  its->phys_base, its->phys_size);
 
     return 0;
 }

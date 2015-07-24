@@ -68,6 +68,26 @@ static inline uint16_t vits_get_max_collections(struct domain *d)
     return (d->max_vcpus + 1);
 }
 
+static struct {
+    bool_t enabled;
+    uint32_t dev_bits;
+    uint32_t eventid_bits;
+    /* GITS physical base */
+    paddr_t phys_base;
+    /* GITS physical size */
+    unsigned long phys_size;
+} vits_hw;
+
+void vits_setup_hw(uint32_t dev_bits, uint32_t eventid_bits,
+                   paddr_t phys_base, unsigned long phys_size)
+{
+    vits_hw.enabled = 1;
+    vits_hw.dev_bits = dev_bits;
+    vits_hw.eventid_bits = eventid_bits;
+    vits_hw.phys_base = phys_base;
+    vits_hw.phys_size = phys_size;
+}
+
 int vits_access_guest_table(struct domain *d, paddr_t entry, void *addr,
                             uint32_t size, bool_t set)
 {
@@ -547,6 +567,14 @@ int vits_domain_init(struct domain *d)
 
     ASSERT(is_hardware_domain(d));
 
+    if ( !vits_hw.enabled )
+    {
+        printk(XENLOG_G_ERR
+               "%"PRIu16": VITS is not supported on this platform.\n",
+               d->domain_id);
+        return -ENODEV;
+    }
+        
     d->arch.vgic.nr_lpis = nr_lpis;
 
     d->arch.vgic.vits = xzalloc(struct vgic_its);

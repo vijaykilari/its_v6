@@ -320,6 +320,11 @@ struct vitt {
     uint32_t vlpi;
 };
 
+struct gic_its_info {
+    uint32_t eventid_bits;
+    uint32_t dev_bits;
+};
+
 void irqdesc_set_lpi_event(struct irq_desc *desc, unsigned id);
 unsigned int irqdesc_get_lpi_event(struct irq_desc *desc);
 struct its_device *irqdesc_get_its_device(struct irq_desc *desc);
@@ -337,6 +342,8 @@ int vits_get_vitt_entry(struct domain *d, uint32_t devid,
                         uint32_t event, struct vitt *entry);
 int vits_get_vdevice_entry(struct domain *d, uint32_t devid,
                            struct vdevice_table *entry);
+void vits_setup_hw(uint32_t dev_bits, uint32_t eventid_bits,
+                   paddr_t base, unsigned long size);
 
 #endif /* __ASM_ARM_GIC_ITS_H__ */
 /*

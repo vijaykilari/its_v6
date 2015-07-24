@@ -70,6 +70,26 @@ static void dump_cmd(const its_cmd_block *cmd)
 static void dump_cmd(const its_cmd_block *cmd) { }
 #endif
 
+static struct {
+    bool_t enabled;
+    uint8_t devID_bits;
+    uint8_t eventID_bits;
+    /* GITS physical base */
+    paddr_t phys_base;
+    /* GITS physical size */
+    unsigned long phys_size;
+} vits_hw;
+
+void vits_setup_hw(uint8_t devID_bits, uint8_t eventID_bits,
+                   paddr_t phys_base, unsigned long phys_size)
+{
+    vits_hw.enabled = 1;
+    vits_hw.devID_bits = devID_bits;
+    vits_hw.eventID_bits = eventID_bits;
+    vits_hw.phys_base = phys_base;
+    vits_hw.phys_size = phys_size;
+}
+
 static inline uint16_t vits_get_max_collections(struct domain *d)
 {
     /*
@@ -838,6 +858,7 @@ int vits_domain_init(struct domain *d)
     }
 
     ASSERT(is_hardware_domain(d));
+    ASSERT(vits_hw.enabled);
 
     d->arch.vgic.vits = xzalloc(struct vgic_its);
     if ( !d->arch.vgic.vits )

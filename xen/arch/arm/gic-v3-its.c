@@ -37,6 +37,7 @@
 #include <asm/gic.h>
 #include <asm/gic_v3_defs.h>
 #include <asm/gic-its.h>
+#include <asm/vits.h>
 #include <xen/log2.h>
 
 #define its_print(lvl, fmt, ...)                                      \
@@ -86,7 +87,15 @@ struct its_node {
     u64                     flags;
     u32                     ite_size;
     struct dt_device_node   *dt_node;
+    u8                      eventID_bits;
+    u8                      devID_bits;
 };
+
+/* Contains common and collective data of all the its nodes. */
+static struct {
+    u8 eventID_bits;
+    u8 devID_bits;
+} its_data;
 
 #define ITS_ITT_ALIGN    SZ_256
 
@@ -812,6 +821,8 @@ int its_add_device(u32 devid, u32 nr_ites, struct dt_device_node *dt_its)
         goto err_unlock;
     }
 
+    ASSERT(dev->event_map.nr_lpis < (1 << dev->its->eventID_bits));
+
     BUG_ON(its_insert_device(dev));
     spin_unlock(&rb_its_dev_lock);
 
@@ -913,6 +924,14 @@ int its_assign_device(struct domain *d, u32 vdevid, u32 pdevid)
     }
 
     return 0;
+}
+
+static void update_its_data(struct its_node *its)
+{
+    if ( its_data.eventID_bits < its->eventID_bits )
+        its_data.eventID_bits = its->eventID_bits;
+    if ( its_data.devID_bits < its->devID_bits )
+        its_data.devID_bits = its->devID_bits;
 }
 
 /*
@@ -1360,6 +1379,9 @@ static int its_probe(struct dt_device_node *node)
     its->phys_size = its_size;
     typer = readl_relaxed(its_base + GITS_TYPER);
     its->ite_size = ((typer >> 4) & 0xf) + 1;
+    its->eventID_bits = GITS_TYPER_IDBITS(typer);
+    its->devID_bits = GITS_TYPER_DEVBITS(typer);
+    update_its_data(its);
 
     its->cmd_base = xzalloc_bytes(ITS_CMD_QUEUE_SZ);
     if ( !its->cmd_base )
@@ -1451,6 +1473,7 @@ int its_cpu_init(void)
 
 int __init its_init(struct rdist_prop *rdists)
 {
+    struct its_node *its;
     struct dt_device_node *np = NULL;
 
     static const struct dt_device_match its_device_ids[] __initconst =
@@ -1472,6 +1495,16 @@ int __init its_init(struct rdist_prop *rdists)
     gic_rdists = rdists;
     its_alloc_lpi_tables();
     its_lpi_init(rdists->id_bits);
+
+    its = list_first_entry(&its_nodes, struct its_node, entry);
+    /*
+     * As per vITS design spec, Xen exposes only one virtual ITS per domain.
+     * This simplifies vITS command model. I.e simplifies processing global
+     * ITS commands which does not have device ID on platform having more
+     * than one physical ITS.
+     */
+    vits_setup_hw(its_data.devID_bits, its_data.eventID_bits,
+                  its->phys_base, its->phys_size);
 
     return 0;
 }

@@ -78,6 +78,8 @@ int vits_get_vitt_entry(struct domain *d, uint32_t devid, uint32_t event,
                         struct vitt *entry);
 int vits_get_vdevice_entry(struct domain *d, uint32_t devid,
                            struct vdevice_table *entry);
+void vits_setup_hw(uint8_t dev_bits, uint8_t eventid_bits,
+                   paddr_t base, unsigned long size);
 
 #endif /* __ASM_ARM_VITS_H__ */
 /*

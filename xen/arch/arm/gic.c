@@ -62,6 +62,15 @@ enum gic_version gic_hw_version(void)
    return gic_hw_ops->info->hw_version;
 }
 
+#ifdef HAS_GICV3
+bool_t gic_is_lpi(unsigned int irq)
+{
+    return (irq >= FIRST_GIC_LPI && irq < (1 << gic_hw_ops->info->nr_id_bits));
+}
+#else
+bool_t gic_is_lpi(unsigned int irq) { return 0; }
+#endif
+
 unsigned int gic_number_lines(void)
 {
     return gic_hw_ops->info->nr_lines;

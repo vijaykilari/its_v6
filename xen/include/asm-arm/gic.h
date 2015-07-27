@@ -20,6 +20,7 @@
 
 #define NR_GIC_LOCAL_IRQS  NR_LOCAL_IRQS
 #define NR_GIC_SGI         16
+#define FIRST_GIC_LPI      8192
 #define MAX_RDIST_COUNT    4
 
 #define GICD_CTLR       (0x000)
@@ -299,6 +300,8 @@ struct gic_info {
     unsigned int maintenance_irq;
     /* Pointer to the device tree node representing the interrupt controller */
     const struct dt_device_node *node;
+    /* Number of IRQ ID bits supported */
+    uint32_t nr_id_bits;
 };
 
 struct gic_hw_operations {
@@ -359,6 +362,7 @@ void register_gic_ops(const struct gic_hw_operations *ops);
 int gic_make_hwdom_dt_node(const struct domain *d,
                            const struct dt_device_node *node,
                            void *fdt);
+bool_t gic_is_lpi(unsigned int irq);
 
 #endif /* __ASSEMBLY__ */
 #endif

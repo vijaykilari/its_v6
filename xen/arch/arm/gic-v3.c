@@ -1270,6 +1270,12 @@ static int __init gicv3_init(void)
                      gicv3.rdist_stride);
     gicv3_init_v2(node, dbase);
 
+    reg = readl_relaxed(GICD + GICD_TYPER);
+
+    gicv3.rdist_data.id_bits = ((reg >> GICD_TYPE_ID_BITS_SHIFT) &
+                                GICD_TYPE_ID_BITS_MASK) + 1;
+    gicv3_info.nr_id_bits = gicv3.rdist_data.id_bits;
+
     spin_lock_init(&gicv3.lock);
 
     spin_lock(&gicv3.lock);

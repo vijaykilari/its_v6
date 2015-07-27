@@ -31,6 +31,18 @@
 static unsigned int local_irqs_type[NR_LOCAL_IRQS];
 static DEFINE_SPINLOCK(local_irqs_type_lock);
 
+/* Number of LPIs supported by Xen.
+ *
+ * The LPI identifier starts from 8192. Given that the hardware is
+ * providing the number of identifier bits, supporting LPIs requires at
+ * least 14 bits. This will represent 16384 interrupt ID of which 8192
+ * LPIs. So the minimum of LPIs supported when the hardware supports LPIs
+ * is 8192.
+ */
+#define DEFAULT_NR_LPIS 8192
+unsigned int nr_lpis = DEFAULT_NR_LPIS;
+integer_param("nr_lpis", nr_lpis);
+
 /* Describe an IRQ assigned to a guest */
 struct irq_guest
 {
@@ -114,6 +126,9 @@ static int __cpuinit init_local_irq_data(void)
 void __init init_IRQ(void)
 {
     int irq;
+
+    if ( nr_lpis < DEFAULT_NR_LPIS )
+        nr_lpis = DEFAULT_NR_LPIS;
 
     spin_lock(&local_irqs_type_lock);
     for ( irq = 0; irq < NR_LOCAL_IRQS; irq++ )

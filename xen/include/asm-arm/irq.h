@@ -33,6 +33,9 @@ struct msi_desc {
 #define nr_static_irqs NR_ITLINES
 #define arch_hwdom_irqs(domid) NR_ITLINES
 
+/* Number of LPIs supported by Xen */
+extern unsigned int nr_lpis;
+
 struct irq_desc;
 struct irqaction;
 

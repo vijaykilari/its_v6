@@ -529,6 +529,11 @@ static void gicv3_set_irq_properties(struct irq_desc *desc,
     spin_unlock(&gicv3.lock);
 }
 
+static int gicv3_dist_supports_lpis(void)
+{
+    return readl_relaxed(GICD + GICD_TYPER) & GICD_TYPER_LPIS_SUPPORTED;
+}
+
 static void __init gicv3_dist_init(void)
 {
     uint32_t type;
@@ -578,6 +583,21 @@ static void __init gicv3_dist_init(void)
 
     /* Only 1020 interrupts are supported */
     gicv3_info.nr_lines = min(1020U, nr_lines);
+
+    /*
+     * Number of IRQ ids supported.
+     * Here we override HW supported number of LPIs and
+     * limit to to LPIs specified in nr_lpis.
+     */
+    if ( gicv3_dist_supports_lpis() )
+        gicv3_info.nr_irq_ids = nr_lpis + FIRST_GIC_LPI;
+    else
+    {
+        gicv3_info.nr_irq_ids = gicv3_info.nr_lines;
+        /* LPIs are not supported by HW. Reset to 0 */
+        nr_lpis = 0;
+    }
+
 }
 
 static int gicv3_enable_redist(void)

@@ -1556,3 +1556,10 @@ mode.
 > Default: `true`
 
 Permit use of the `xsave/xrstor` instructions.
+
+### nr_lpis (ARM)
+> `= <integer>`
+
+> Default: `8192`
+
+Number of LPIs supported by Xen.

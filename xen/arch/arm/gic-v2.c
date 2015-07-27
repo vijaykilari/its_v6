@@ -287,6 +287,8 @@ static void __init gicv2_dist_init(void)
 
     /* Only 1020 interrupts are supported */
     gicv2_info.nr_lines = min(1020U, nr_lines);
+    /* Number of IRQ ids supported */
+    gicv2_info.nr_irq_ids = nr_lines;
 
     /* Turn on the distributor */
     writel_gicd(GICD_CTL_ENABLE, GICD_CTLR);

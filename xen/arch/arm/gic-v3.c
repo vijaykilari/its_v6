@@ -58,6 +58,33 @@ static struct gic_info gicv3_info;
 /* per-cpu re-distributor base */
 DEFINE_PER_CPU(struct rdist, rdist);
 
+/* Enable/Disable ITS support */
+static bool_t its_enable  = 0;
+
+static void __init parse_its_param(char *s)
+{
+    if ( !parse_bool(s) )
+        its_enable = 0;
+}
+
+/* 'msi' command line option to enable/disable ITS */
+custom_param("msi", parse_its_param);
+
+/*
+ * Number of LPIs supported by Xen.
+ *
+ * The LPI identifier starts from 8192. Given that the hardware is
+ * providing the number of identifier bits, supporting LPIs requires at
+ * least 14 bits. This will represent 16384 interrupt ID of which 8192
+ * LPIs. So the minimum of LPIs supported when the hardware supports LPIs
+ * is 8192.
+ */
+#define DEFAULT_NR_LPIS    8192
+static unsigned int nr_lpis;
+
+/* 'nr_lpis' command line option to specify number of LPIs supported by Xen. */
+integer_param("nr_lpis", nr_lpis);
+
 #define GICD                   (gicv3.map_dbase)
 #define GICD_RDIST_BASE        (this_cpu(rdist).rbase)
 #define GICD_RDIST_SGI_BASE    (GICD_RDIST_BASE + SZ_64K)
@@ -529,6 +556,11 @@ static void gicv3_set_irq_properties(struct irq_desc *desc,
     spin_unlock(&gicv3.lock);
 }
 
+static int gicv3_dist_supports_lpis(void)
+{
+    return readl_relaxed(GICD + GICD_TYPER) & GICD_TYPER_LPIS_SUPPORTED;
+}
+
 static void __init gicv3_dist_init(void)
 {
     uint32_t type;
@@ -578,6 +610,23 @@ static void __init gicv3_dist_init(void)
 
     /* Only 1020 interrupts are supported */
     gicv3_info.nr_lines = min(1020U, nr_lines);
+
+    /*
+     * Number of IRQ ids supported.
+     * Here we override HW supported number of LPIs and
+     * limit to to LPIs specified in nr_lpis.
+     */
+    if ( its_enable && gicv3_dist_supports_lpis() )
+    {
+        /* Minimum number of lpi supported is 8192 */
+        if ( nr_lpis < DEFAULT_NR_LPIS )
+            nr_lpis = DEFAULT_NR_LPIS;
+
+        gicv3_info.nr_irq_ids = nr_lpis + FIRST_GIC_LPI;
+    }
+    else
+        gicv3_info.nr_irq_ids = gicv3_info.nr_lines;
+
 }
 
 static int gicv3_enable_redist(void)

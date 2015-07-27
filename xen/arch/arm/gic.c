@@ -62,6 +62,16 @@ enum gic_version gic_hw_version(void)
    return gic_hw_ops->info->hw_version;
 }
 
+unsigned int gic_nr_irq_ids(void)
+{
+    return gic_hw_ops->info->nr_irq_ids;
+}
+
+bool_t gic_is_lpi(unsigned int irq)
+{
+    return (irq >= FIRST_GIC_LPI && irq < gic_nr_irq_ids());
+}
+
 unsigned int gic_number_lines(void)
 {
     return gic_hw_ops->info->nr_lines;

@@ -109,6 +109,34 @@ static void dump_cmd(const its_cmd_block *cmd)
 static void dump_cmd(const its_cmd_block *cmd) { }
 #endif
 
+void irqdesc_set_lpi_event(struct irq_desc *desc, unsigned id)
+{
+    ASSERT(spin_is_locked(&desc->lock));
+
+    irq_get_msi_desc(desc)->eventID = id;
+}
+
+unsigned int irqdesc_get_lpi_event(struct irq_desc *desc)
+{
+    ASSERT(spin_is_locked(&desc->lock));
+
+    return irq_get_msi_desc(desc)->eventID;
+}
+
+struct its_device *irqdesc_get_its_device(struct irq_desc *desc)
+{
+    ASSERT(spin_is_locked(&desc->lock));
+
+    return irq_get_msi_desc(desc)->dev;
+}
+
+void irqdesc_set_its_device(struct irq_desc *desc, struct its_device *dev)
+{
+    ASSERT(spin_is_locked(&desc->lock));
+
+    irq_get_msi_desc(desc)->dev = dev;
+}
+
 static struct its_collection *dev_event_to_col(struct its_device *dev,
                                                u32 event)
 {

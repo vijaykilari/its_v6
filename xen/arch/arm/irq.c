@@ -143,6 +143,18 @@ static inline struct domain *irq_get_domain(struct irq_desc *desc)
     return irq_get_guest_info(desc)->d;
 }
 
+void irq_set_msi_desc(struct irq_desc *desc, struct msi_desc *msi)
+{
+    desc->msi_desc = msi;
+}
+
+struct msi_desc *irq_get_msi_desc(struct irq_desc *desc)
+{
+    ASSERT(desc->msi_desc != NULL);
+
+    return desc->msi_desc;
+}
+
 void irq_set_affinity(struct irq_desc *desc, const cpumask_t *cpu_mask)
 {
     if ( desc != NULL )

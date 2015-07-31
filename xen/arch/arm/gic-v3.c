@@ -684,6 +684,11 @@ static int __init gicv3_populate_rdist(void)
     return -ENODEV;
 }
 
+static int gicv3_dist_supports_lpis(void)
+{
+    return readl_relaxed(GICD + GICD_TYPER) & GICD_TYPER_LPIS_SUPPORTED;
+}
+
 static int __cpuinit gicv3_cpu_init(void)
 {
     int i;
@@ -695,6 +700,10 @@ static int __cpuinit gicv3_cpu_init(void)
 
     if ( gicv3_enable_redist() )
         return -ENODEV;
+
+    /* Give LPIs a spin */
+    if ( gicv3_info.lpi_supported )
+        its_cpu_init();
 
     /* Set priority on PPI and SGI interrupts */
     priority = (GIC_PRI_IPI << 24 | GIC_PRI_IPI << 16 | GIC_PRI_IPI << 8 |
@@ -1298,6 +1307,20 @@ static int __init gicv3_init(void)
     spin_lock_init(&gicv3.lock);
 
     spin_lock(&gicv3.lock);
+
+    if ( gicv3_dist_supports_lpis() )
+    {
+        /*
+         * LPI support is enabled only if HW supports it and
+         * ITS dt node is available
+         */
+        if ( !its_init(&gicv3.rdist_data) )
+            gicv3_info.lpi_supported = 1;
+        else
+            gicv3_info.lpi_supported = 0;
+    }
+    else
+        gicv3_info.lpi_supported = 0;
 
     gicv3_dist_init();
     res = gicv3_cpu_init();

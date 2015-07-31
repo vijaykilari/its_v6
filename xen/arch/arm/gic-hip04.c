@@ -710,6 +710,8 @@ static int __init hip04gic_init(void)
     hip04gic_cpu_init();
     hip04gic_hyp_init();
 
+    gicv2_info.lpi_supported = 0;
+
     spin_unlock(&gicv2.lock);
 
     return 0;

@@ -696,6 +696,8 @@ static int __init gicv2_init(void)
     gicv2_cpu_init();
     gicv2_hyp_init();
 
+    gicv2_info.lpi_supported = 0;
+
     spin_unlock(&gicv2.lock);
 
     return 0;

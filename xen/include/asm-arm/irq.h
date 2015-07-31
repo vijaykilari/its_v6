@@ -18,6 +18,13 @@ struct arch_irq_desc {
     unsigned int type;
 };
 
+struct msi_desc {
+#ifdef CONFIG_HAS_GICV3
+    unsigned int eventID;
+    struct its_device *dev;
+#endif
+};
+
 #define NR_LOCAL_IRQS	32
 /* Number of SGIs + PPIs + SPIs */
 #define NR_ITLINES	1024
@@ -56,6 +63,8 @@ int irq_set_spi_type(unsigned int spi, unsigned int type);
 int platform_get_irq(const struct dt_device_node *device, int index);
 
 void irq_set_affinity(struct irq_desc *desc, const cpumask_t *cpu_mask);
+void irq_set_msi_desc(struct irq_desc *desc, struct msi_desc *msi);
+struct msi_desc *irq_get_msi_desc(struct irq_desc *desc);
 
 #endif /* _ASM_HW_IRQ_H */
 /*

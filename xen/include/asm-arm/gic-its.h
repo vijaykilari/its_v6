@@ -271,6 +271,10 @@ struct its_device {
     struct rb_node          node;
 };
 
+void irqdesc_set_lpi_event(struct irq_desc *desc, unsigned id);
+unsigned int irqdesc_get_lpi_event(struct irq_desc *desc);
+struct its_device *irqdesc_get_its_device(struct irq_desc *desc);
+void irqdesc_set_its_device(struct irq_desc *desc, struct its_device *dev);
 int its_init(struct rdist_prop *rdists);
 int its_cpu_init(void);
 

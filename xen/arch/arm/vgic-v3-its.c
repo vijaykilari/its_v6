@@ -860,6 +860,12 @@ int vits_domain_init(struct domain *d)
     ASSERT(is_hardware_domain(d));
     ASSERT(vits_hw.enabled);
 
+    /*
+     * HW might support more number of LPIs than specified here for a domain.
+     * Here we limit number of LPIs supported for domain to nr_lpis.
+     */
+    d->arch.vgic.nr_lpis = gic_nr_irq_ids() - FIRST_GIC_LPI;
+
     d->arch.vgic.vits = xzalloc(struct vgic_its);
     if ( !d->arch.vgic.vits )
         return -ENOMEM;

@@ -33,6 +33,9 @@ struct msi_desc {
 #define nr_static_irqs NR_LINE_IRQS
 #define arch_hwdom_irqs(domid) NR_LINE_IRQS
 
+/* Number of LPI supported */
+extern unsigned int nr_lpis;
+
 struct irq_desc;
 struct irqaction;
 

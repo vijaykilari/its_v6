@@ -72,8 +72,10 @@ int domain_vgic_init(struct domain *d, unsigned int nr_spis)
 {
     int i;
     int ret;
+    unsigned int irq_lines;
 
     d->arch.vgic.ctlr = 0;
+    d->arch.vgic.nr_lpis = 0;
 
     /* Limit the number of virtual SPIs supported to (1020 - 32) = 988  */
     if ( nr_spis > (1020 - NR_LOCAL_IRQS) )
@@ -129,6 +131,16 @@ int domain_vgic_init(struct domain *d, unsigned int nr_spis)
     /* vIRQ0-15 (SGIs) are reserved */
     for ( i = 0; i < NR_GIC_SGI; i++ )
         set_bit(i, d->arch.vgic.allocated_irqs);
+
+    irq_lines = d->arch.vgic.nr_spis + 32;
+    /*
+     * If LPIs are supported, then just overwrite nr_spis
+     * in computing id_bits.
+     */
+    if ( d->arch.vgic.nr_lpis != 0 )
+       irq_lines = d->arch.vgic.nr_lpis + FIRST_GIC_LPI;
+
+    d->arch.vgic.id_bits = get_count_order(irq_lines);
 
     return 0;
 }

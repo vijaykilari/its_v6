@@ -93,6 +93,9 @@ struct arch_domain
         spinlock_t lock;
         int ctlr;
         int nr_spis; /* Number of SPIs */
+        int nr_lpis; /* Number of LPIs */
+        /* Number of bits required to represent IRQs(SPIs+LPIs) */
+        int id_bits;
         unsigned long *allocated_irqs; /* bitmap of IRQs allocated */
         struct vgic_irq_rank *shared_irqs;
         /*

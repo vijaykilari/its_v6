@@ -547,6 +547,8 @@ int vits_domain_init(struct domain *d)
 
     ASSERT(is_hardware_domain(d));
 
+    d->arch.vgic.nr_lpis = nr_lpis;
+
     d->arch.vgic.vits = xzalloc(struct vgic_its);
     if ( !d->arch.vgic.vits )
         return -ENOMEM;

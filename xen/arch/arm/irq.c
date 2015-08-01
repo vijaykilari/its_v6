@@ -31,6 +31,15 @@
 static unsigned int local_irqs_type[NR_LOCAL_IRQS];
 static DEFINE_SPINLOCK(local_irqs_type_lock);
 
+/* Number of LPI supported in XEN */
+/*
+ * LPI number start from 8192. Minimum number of bits
+ * required to represent 8192 is 13 bits. So to Support LPIs minimum 
+ * 14 bits are required which can represent maximum LPI 16384.
+ * 16384 - 8192 = 8192. Minimum number of LPIs supported is 8192
+ */
+unsigned int nr_lpis = 8192;
+
 /* Describe an IRQ assigned to a guest */
 struct irq_guest
 {

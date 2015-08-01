@@ -75,6 +75,7 @@ int domain_vgic_init(struct domain *d, unsigned int nr_spis)
     int ret;
 
     d->arch.vgic.ctlr = 0;
+    d->arch.vgic.nr_lpis = 0;
 
     /* Limit the number of virtual SPIs supported to (1020 - 32) = 988  */
     if ( nr_spis > (1020 - NR_LOCAL_IRQS) )

@@ -843,6 +843,8 @@ int vits_domain_init(struct domain *d)
     ASSERT(is_hardware_domain(d));
     ASSERT(vits_hw.enabled);
 
+    d->arch.vgic.nr_lpis = gic_nr_irq_ids() - FIRST_GIC_LPI;
+
     d->arch.vgic.vits = xzalloc(struct vgic_its);
     if ( !d->arch.vgic.vits )
         return -ENOMEM;

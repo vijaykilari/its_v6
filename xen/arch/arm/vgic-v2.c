@@ -594,6 +594,8 @@ static int vgic_v2_domain_init(struct domain *d)
     register_mmio_handler(d, &vgic_v2_distr_mmio_handler, d->arch.vgic.dbase,
                           PAGE_SIZE);
 
+    d->arch.vgic.its_enabled = 0;
+
     return 0;
 }
 

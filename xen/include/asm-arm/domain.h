@@ -93,6 +93,7 @@ struct arch_domain
         int ctlr;
         int nr_spis; /* Number of SPIs */
         int nr_lpis; /* Number of LPIs */
+        bool_t its_enabled;
         unsigned long *allocated_irqs; /* bitmap of IRQs allocated */
         struct vgic_irq_rank *shared_irqs;
         /*

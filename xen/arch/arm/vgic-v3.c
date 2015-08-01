@@ -1250,6 +1250,9 @@ static int vgic_v3_domain_init(struct domain *d)
 
     d->arch.vgic.ctlr = VGICD_CTLR_DEFAULT;
 
+    if ( is_hardware_domain(d) && vgic_v3_hw.lpi_support )
+        d->arch.vgic.its_enabled = 1;
+
     return 0;
 }
 

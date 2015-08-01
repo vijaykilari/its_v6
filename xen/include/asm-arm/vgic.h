@@ -309,6 +309,7 @@ enum gic_sgi_mode;
 
 #define vgic_num_irq_lines(d)   ((d)->arch.vgic.nr_spis + 32)
 
+extern bool_t vgic_is_lpi_supported(struct domain *d);
 extern int domain_vgic_init(struct domain *d, unsigned int nr_spis);
 extern void domain_vgic_free(struct domain *d);
 extern int vcpu_vgic_init(struct vcpu *v);

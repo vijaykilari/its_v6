@@ -32,6 +32,8 @@
 #include <asm/platform.h>
 #include <asm/vgic.h>
 
+static struct vgic_info vgic_v2_info;
+
 static struct {
     bool_t enabled;
     /* Distributor interface address */
@@ -594,10 +596,13 @@ static int vgic_v2_domain_init(struct domain *d)
     register_mmio_handler(d, &vgic_v2_distr_mmio_handler, d->arch.vgic.dbase,
                           PAGE_SIZE);
 
+    vgic_v2_info.its_enabled = 0;
+
     return 0;
 }
 
 static const struct vgic_ops vgic_v2_ops = {
+    .info = &vgic_v2_info,
     .vcpu_init   = vgic_v2_vcpu_init,
     .domain_init = vgic_v2_domain_init,
     .get_irq_priority = vgic_v2_get_irq_priority,

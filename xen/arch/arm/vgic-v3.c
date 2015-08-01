@@ -49,6 +49,8 @@
  */
 #define VGICD_CTLR_DEFAULT  (GICD_CTLR_ARE_NS)
 
+static struct vgic_info vgic_v3_info;
+
 static struct {
     bool_t enabled;
     /* Distributor interface address */
@@ -1247,10 +1249,14 @@ static int vgic_v3_domain_init(struct domain *d)
 
     d->arch.vgic.ctlr = VGICD_CTLR_DEFAULT;
 
+    if ( is_hardware_domain(d) && gic_lpi_supported() )
+        vgic_v3_info.its_enabled = 1;
+
     return 0;
 }
 
 static const struct vgic_ops v3_ops = {
+    .info = &vgic_v3_info,
     .vcpu_init   = vgic_v3_vcpu_init,
     .domain_init = vgic_v3_domain_init,
     .get_irq_priority = vgic_v3_get_irq_priority,

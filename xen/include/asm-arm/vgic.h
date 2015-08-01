@@ -110,7 +110,13 @@ static inline void sgi_target_init(struct sgi_target *sgi_target)
     sgi_target->list = 0;
 }
 
+struct vgic_info {
+    bool_t its_enabled;
+};
+
 struct vgic_ops {
+    /* Hold vGIC information */
+    const struct vgic_info *info;
     /* Initialize vGIC */
     int (*vcpu_init)(struct vcpu *v);
     /* Domain specific initialization of vGIC */
@@ -309,6 +315,7 @@ enum gic_sgi_mode;
 
 #define vgic_num_line_irqs(d)        ((d)->arch.vgic.nr_spis + 32)
 
+extern bool_t vgic_is_lpi_supported(struct domain *d);
 extern int domain_vgic_init(struct domain *d, unsigned int nr_spis);
 extern void domain_vgic_free(struct domain *d);
 extern int vcpu_vgic_init(struct vcpu *v);

@@ -311,6 +311,7 @@ extern int vgic_emulate(struct cpu_user_regs *regs, union hsr hsr);
 extern void vgic_disable_irqs(struct vcpu *v, uint32_t r, int n);
 extern void vgic_enable_irqs(struct vcpu *v, uint32_t r, int n);
 extern void register_vgic_ops(struct domain *d, const struct vgic_ops *ops);
+extern bool_t vgic_is_lpi_supported(struct domain *d);
 int vgic_v2_init(struct domain *d);
 int vgic_v3_init(struct domain *d);
 

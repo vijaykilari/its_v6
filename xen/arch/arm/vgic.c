@@ -62,6 +62,11 @@ struct vgic_irq_rank *vgic_rank_irq(struct vcpu *v, unsigned int irq)
     return vgic_get_rank(v, rank);
 }
 
+bool_t vgic_is_lpi_supported(struct domain *d)
+{
+    return (d->arch.vgic.nr_lpis != 0);
+}
+
 static void vgic_init_pending_irq(struct pending_irq *p, unsigned int virq)
 {
     INIT_LIST_HEAD(&p->inflight);

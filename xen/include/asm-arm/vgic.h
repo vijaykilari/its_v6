@@ -19,6 +19,7 @@
 #define __ASM_ARM_VGIC_H__
 
 #include <xen/bitops.h>
+#include <asm/mmio.h>
 
 struct pending_irq
 {
@@ -179,6 +180,115 @@ static inline void vgic_byte_write(uint32_t *reg, uint32_t var, int offset)
     *reg &= ~(0xff << (8*byte));
     *reg |= var;
 }
+
+static inline uint64_t vgic_reg_mask(enum dabt_size size)
+{
+    if ( size == DABT_DOUBLE_WORD )
+        return ~0ULL;
+    else
+        return ((1ULL << ((1 << size) * 8)) - 1);
+}
+
+/*
+ * The check on the size supported by the register has to be done by
+ * the caller of vgic_regN_*.
+ *
+ * vgic_reg_* should never be called directly. Instead use the vgic_regN_*
+ * according to size of the emulated register
+ *
+ * Note that the alignment fault will always be taken in the guest
+ * (see B3.12.7 DDI0406.b).
+ */
+static inline register_t vgic_reg_read(uint64_t reg,
+                                       unsigned int offset,
+                                       enum dabt_size size)
+{
+    reg >>= 8 * offset;
+    reg &= vgic_reg_mask(size);
+
+    return reg;
+}
+
+static inline void vgic_reg_write(uint64_t *reg, register_t val,
+                                  unsigned int offset,
+                                  enum dabt_size size)
+{
+    uint64_t mask = vgic_reg_mask(size);
+    int shift = offset * 8;
+
+    *reg &= ~(mask << shift);
+    *reg |= ((uint64_t)val & mask) << shift;
+}
+
+static inline void vgic_reg_setbit(uint64_t *reg, register_t bits,
+                                   unsigned int offset,
+                                   enum dabt_size size)
+{
+    uint64_t mask = vgic_reg_mask(size);
+    int shift = offset * 8;
+
+    *reg |= ((uint64_t)bits & mask) << shift;
+}
+
+static inline void vgic_reg_clearbit(uint64_t *reg, register_t bits,
+                                     unsigned int offset,
+                                     enum dabt_size size)
+{
+    uint64_t mask = vgic_reg_mask(size);
+    int shift = offset * 8;
+
+    *reg &= ~(((uint64_t)bits & mask) << shift);
+}
+
+/* N-bit register helpers */
+#define VGIC_REG_HELPERS(sz, offmask)                                   \
+static inline register_t vgic_reg##sz##_read(uint##sz##_t reg,          \
+                                             const mmio_info_t *info)   \
+{                                                                       \
+    return vgic_reg_read(reg, info->gpa & offmask,                      \
+                         info->dabt.size);                              \
+}                                                                       \
+                                                                        \
+static inline void vgic_reg##sz##_write(uint##sz##_t *reg,              \
+                                        register_t val,                 \
+                                        const mmio_info_t *info)        \
+{                                                                       \
+    uint64_t tmp = *reg;                                                \
+                                                                        \
+    vgic_reg_write(&tmp, val, info->gpa & offmask,                      \
+                   info->dabt.size);                                    \
+                                                                        \
+    *reg = tmp;                                                         \
+}                                                                       \
+                                                                        \
+static inline void vgic_reg##sz##_setbit(uint##sz##_t *reg,             \
+                                         register_t bits,               \
+                                         const mmio_info_t *info)       \
+{                                                                       \
+    uint64_t tmp = *reg;                                                \
+                                                                        \
+    vgic_reg_setbit(&tmp, bits, info->gpa & offmask,                    \
+                    info->dabt.size);                                   \
+                                                                        \
+    *reg = tmp;                                                         \
+}                                                                       \
+                                                                        \
+static inline void vgic_reg##sz##_clearbit(uint##sz##_t *reg,           \
+                                           register_t bits,             \
+                                           const mmio_info_t *info)     \
+{                                                                       \
+    uint64_t tmp = *reg;                                                \
+                                                                        \
+    vgic_reg_clearbit(&tmp, bits, info->gpa & offmask,                  \
+                    info->dabt.size);                                   \
+                                                                        \
+    *reg = tmp;                                                         \
+}
+
+VGIC_REG_HELPERS(64, 0x7);
+VGIC_REG_HELPERS(32, 0x3);
+
+#undef VGIC_REG_HELPERS
 
 enum gic_sgi_mode;
 

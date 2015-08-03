@@ -109,7 +109,6 @@ static int __vgic_v3_rdistr_rd_mmio_read(struct vcpu *v, mmio_info_t *info,
     struct hsr_dabt dabt = info->dabt;
     struct cpu_user_regs *regs = guest_cpu_user_regs();
     register_t *r = select_user_reg(regs, dabt.reg);
-    uint64_t aff;
 
     switch ( gicr_reg )
     {
@@ -118,21 +117,27 @@ static int __vgic_v3_rdistr_rd_mmio_read(struct vcpu *v, mmio_info_t *info,
         goto read_as_zero_32;
     case GICR_IIDR:
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        *r = GICV3_GICR_IIDR_VAL;
+        *r = vgic_reg32_read(GICV3_GICR_IIDR_VAL, info);
         return 1;
     case GICR_TYPER:
+    {
+        uint64_t typer, aff;
+
         if ( dabt.size != DABT_DOUBLE_WORD ) goto bad_width;
         /* TBD: Update processor id in [23:8] when ITS support is added */
         aff = (MPIDR_AFFINITY_LEVEL(v->arch.vmpidr, 3) << 56 |
                MPIDR_AFFINITY_LEVEL(v->arch.vmpidr, 2) << 48 |
                MPIDR_AFFINITY_LEVEL(v->arch.vmpidr, 1) << 40 |
                MPIDR_AFFINITY_LEVEL(v->arch.vmpidr, 0) << 32);
-        *r = aff;
+        typer = aff;
 
         if ( v->arch.vgic.flags & VGIC_V3_RDIST_LAST )
-            *r |= GICR_TYPER_LAST;
+            typer |= GICR_TYPER_LAST;
+
+        *r = vgic_reg64_read(typer, info);
 
         return 1;
+    }
     case GICR_STATUSR:
         /* Not implemented */
         goto read_as_zero_32;
@@ -161,7 +166,7 @@ static int __vgic_v3_rdistr_rd_mmio_read(struct vcpu *v, mmio_info_t *info,
     case GICR_SYNCR:
         if ( dabt.size != DABT_WORD ) goto bad_width;
         /* RO . But when read it always returns busy bito bit[0] */
-        *r = GICR_SYNCR_NOT_BUSY;
+        *r = vgic_reg32_read(GICR_SYNCR_NOT_BUSY, info);
         return 1;
     case GICR_MOVLPIR:
         /* WO Read as zero */
@@ -171,22 +176,22 @@ static int __vgic_v3_rdistr_rd_mmio_read(struct vcpu *v, mmio_info_t *info,
         goto read_as_zero_64;
     case GICR_PIDR0:
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        *r = GICV3_GICR_PIDR0;
+        *r = vgic_reg32_read(GICV3_GICR_PIDR0, info);
          return 1;
     case GICR_PIDR1:
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        *r = GICV3_GICR_PIDR1;
+        *r = vgic_reg32_read(GICV3_GICR_PIDR1, info);
          return 1;
     case GICR_PIDR2:
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        *r = GICV3_GICR_PIDR2;
+        *r = vgic_reg32_read(GICV3_GICR_PIDR2, info);
          return 1;
     case GICR_PIDR3:
         /* Manufacture/customer defined */
         goto read_as_zero_32;
     case GICR_PIDR4:
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        *r = GICV3_GICR_PIDR4;
+        *r = vgic_reg32_read(GICV3_GICR_PIDR4, info);
          return 1;
     case GICR_PIDR5 ... GICR_PIDR7:
         /* Reserved0 */
@@ -309,7 +314,7 @@ static int __vgic_v3_distr_common_mmio_read(const char *name, struct vcpu *v,
         rank = vgic_rank_offset(v, 1, reg - GICD_ISENABLER, DABT_WORD);
         if ( rank == NULL ) goto read_as_zero;
         vgic_lock_rank(v, rank, flags);
-        *r = rank->ienable;
+        *r = vgic_reg32_read(rank->ienable, info);
         vgic_unlock_rank(v, rank, flags);
         return 1;
     case GICD_ICENABLER ... GICD_ICENABLERN:
@@ -317,7 +322,7 @@ static int __vgic_v3_distr_common_mmio_read(const char *name, struct vcpu *v,
         rank = vgic_rank_offset(v, 1, reg - GICD_ICENABLER, DABT_WORD);
         if ( rank == NULL ) goto read_as_zero;
         vgic_lock_rank(v, rank, flags);
-        *r = rank->ienable;
+        *r = vgic_reg32_read(rank->ienable, info);
         vgic_unlock_rank(v, rank, flags);
         return 1;
     /* Read the pending status of an IRQ via GICD/GICR is not supported */
@@ -331,25 +336,37 @@ static int __vgic_v3_distr_common_mmio_read(const char *name, struct vcpu *v,
         goto read_as_zero;
 
     case GICD_IPRIORITYR ... GICD_IPRIORITYRN:
+    {
+        uint32_t ipriority;
+
         if ( dabt.size != DABT_BYTE && dabt.size != DABT_WORD ) goto bad_width;
         rank = vgic_rank_offset(v, 8, reg - GICD_IPRIORITYR, DABT_WORD);
         if ( rank == NULL ) goto read_as_zero;
 
         vgic_lock_rank(v, rank, flags);
-        *r = rank->ipriority[REG_RANK_INDEX(8, reg - GICD_IPRIORITYR,
-                                            DABT_WORD)];
-        if ( dabt.size == DABT_BYTE )
-            *r = vgic_byte_read(*r, dabt.sign, reg);
+        ipriority = rank->ipriority[REG_RANK_INDEX(8, reg - GICD_IPRIORITYR,
+                                                   DABT_WORD)];
         vgic_unlock_rank(v, rank, flags);
+
+        *r = vgic_reg32_read(ipriority, info);
+
         return 1;
+    }
     case GICD_ICFGR ... GICD_ICFGRN:
+    {
+        uint32_t icfgr;
+
         if ( dabt.size != DABT_WORD ) goto bad_width;
         rank = vgic_rank_offset(v, 2, reg - GICD_ICFGR, DABT_WORD);
         if ( rank == NULL ) goto read_as_zero;
         vgic_lock_rank(v, rank, flags);
-        *r = rank->icfg[REG_RANK_INDEX(2, reg - GICD_ICFGR, DABT_WORD)];
+        icfgr = rank->icfg[REG_RANK_INDEX(2, reg - GICD_ICFGR, DABT_WORD)];
         vgic_unlock_rank(v, rank, flags);
+
+        *r = vgic_reg32_read(icfgr, info);
+
         return 1;
+    }
     default:
         printk(XENLOG_G_ERR
                "%pv: %s: unhandled read r%d offset %#08x\n",
@@ -389,7 +406,7 @@ static int __vgic_v3_distr_common_mmio_write(const char *name, struct vcpu *v,
         if ( rank == NULL ) goto write_ignore;
         vgic_lock_rank(v, rank, flags);
         tr = rank->ienable;
-        rank->ienable |= *r;
+        vgic_reg32_setbit(&rank->ienable, *r, info);
         /* The irq number is extracted from offset. so shift by register size */
         vgic_enable_irqs(v, (*r) & (~tr), (reg - GICD_ISENABLER) >> DABT_WORD);
         vgic_unlock_rank(v, rank, flags);
@@ -400,6 +417,7 @@ static int __vgic_v3_distr_common_mmio_write(const char *name, struct vcpu *v,
         if ( rank == NULL ) goto write_ignore;
         vgic_lock_rank(v, rank, flags);
         tr = rank->ienable;
+        vgic_reg32_clearbit(&rank->ienable, *r, info);
         rank->ienable &= ~*r;
         /* The irq number is extracted from offset. so shift by register size */
         vgic_disable_irqs(v, (*r) & tr, (reg - GICD_ICENABLER) >> DABT_WORD);
@@ -438,12 +456,10 @@ static int __vgic_v3_distr_common_mmio_write(const char *name, struct vcpu *v,
         rank = vgic_rank_offset(v, 8, reg - GICD_IPRIORITYR, DABT_WORD);
         if ( rank == NULL ) goto write_ignore;
         vgic_lock_rank(v, rank, flags);
-        if ( dabt.size == DABT_WORD )
-            rank->ipriority[REG_RANK_INDEX(8, reg - GICD_IPRIORITYR,
-                                           DABT_WORD)] = *r;
-        else
-            vgic_byte_write(&rank->ipriority[REG_RANK_INDEX(8,
-                       reg - GICD_IPRIORITYR, DABT_WORD)], *r, reg);
+        vgic_reg32_write(&rank->ipriority[REG_RANK_INDEX(8,
+                                                         reg - GICD_IPRIORITYR,
+                                                         DABT_WORD)],
+                         *r, info);
         vgic_unlock_rank(v, rank, flags);
         return 1;
     case GICD_ICFGR: /* Restricted to configure SGIs */
@@ -455,7 +471,9 @@ static int __vgic_v3_distr_common_mmio_write(const char *name, struct vcpu *v,
         rank = vgic_rank_offset(v, 2, reg - GICD_ICFGR, DABT_WORD);
         if ( rank == NULL ) goto write_ignore;
         vgic_lock_rank(v, rank, flags);
-        rank->icfg[REG_RANK_INDEX(2, reg - GICD_ICFGR, DABT_WORD)] = *r;
+        vgic_reg32_write(&rank->icfg[REG_RANK_INDEX(2, reg - GICD_ICFGR,
+                                                    DABT_WORD)],
+                         *r, info);
         vgic_unlock_rank(v, rank, flags);
         return 1;
     default:
@@ -694,7 +712,7 @@ static int vgic_v3_distr_mmio_read(struct vcpu *v, mmio_info_t *info)
     case GICD_CTLR:
         if ( dabt.size != DABT_WORD ) goto bad_width;
         vgic_lock(v);
-        *r = v->domain->arch.vgic.ctlr;
+        *r = vgic_reg32_read(v->domain->arch.vgic.ctlr, info);
         vgic_unlock(v);
         return 1;
     case GICD_TYPER:
@@ -709,13 +727,16 @@ static int vgic_v3_distr_mmio_read(struct vcpu *v, mmio_info_t *info)
          * bit is zero. The maximum is 8.
          */
         unsigned int ncpus = min_t(unsigned int, v->domain->max_vcpus, 8);
+        uint32_t typer;
 
         if ( dabt.size != DABT_WORD ) goto bad_width;
         /* No secure world support for guests. */
-        *r = ((ncpus - 1) << GICD_TYPE_CPUS_SHIFT |
-              DIV_ROUND_UP(v->domain->arch.vgic.nr_spis, 32));
+        typer = ((ncpus - 1) << GICD_TYPE_CPUS_SHIFT |
+                 DIV_ROUND_UP(v->domain->arch.vgic.nr_spis, 32));
 
-        *r |= (irq_bits - 1) << GICD_TYPE_ID_BITS_SHIFT;
+        typer |= (irq_bits - 1) << GICD_TYPE_ID_BITS_SHIFT;
+
+        *r = vgic_reg32_read(typer, info);
 
         return 1;
     }
@@ -727,7 +748,7 @@ static int vgic_v3_distr_mmio_read(struct vcpu *v, mmio_info_t *info)
         goto read_as_zero_32;
     case GICD_IIDR:
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        *r = GICV3_GICD_IIDR_VAL;
+        *r = vgic_reg32_read(GICV3_GICD_IIDR_VAL, info);
         return 1;
     case 0x020 ... 0x03c:
     case 0xc000 ... 0xffcc:
@@ -750,15 +771,23 @@ static int vgic_v3_distr_mmio_read(struct vcpu *v, mmio_info_t *info)
         /* SGI/PPI is RES0 */
         goto read_as_zero_64;
     case GICD_IROUTER32 ... GICD_IROUTERN:
+    {
+        uint64_t irouter;
+
         if ( dabt.size != DABT_DOUBLE_WORD ) goto bad_width;
         rank = vgic_rank_offset(v, 64, gicd_reg - GICD_IROUTER,
                                 DABT_DOUBLE_WORD);
         if ( rank == NULL ) goto read_as_zero;
         vgic_lock_rank(v, rank, flags);
-        *r = rank->v3.irouter[REG_RANK_INDEX(64,
-                              (gicd_reg - GICD_IROUTER), DABT_DOUBLE_WORD)];
+        irouter = rank->v3.irouter[REG_RANK_INDEX(64,
+                                                  (gicd_reg - GICD_IROUTER),
+                                                  DABT_DOUBLE_WORD)];
         vgic_unlock_rank(v, rank, flags);
+
+        *r = vgic_reg64_read(irouter, info);
+
         return 1;
+    }
     case GICD_NSACR ... GICD_NSACRN:
         /* We do not implement security extensions for guests, read zero */
         goto read_as_zero_32;
@@ -774,17 +803,17 @@ static int vgic_v3_distr_mmio_read(struct vcpu *v, mmio_info_t *info)
     case GICD_PIDR0:
         /* GICv3 identification value */
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        *r = GICV3_GICD_PIDR0;
+        *r = vgic_reg32_read(GICV3_GICD_PIDR0, info);
         return 1;
     case GICD_PIDR1:
         /* GICv3 identification value */
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        *r = GICV3_GICD_PIDR1;
+        *r = vgic_reg32_read(GICV3_GICD_PIDR1, info);
         return 1;
     case GICD_PIDR2:
         /* GICv3 identification value */
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        *r = GICV3_GICD_PIDR2;
+        *r = vgic_reg32_read(GICV3_GICD_PIDR2, info);
         return 1;
     case GICD_PIDR3:
         /* GICv3 identification value. Manufacturer/Customer defined */
@@ -792,7 +821,7 @@ static int vgic_v3_distr_mmio_read(struct vcpu *v, mmio_info_t *info)
     case GICD_PIDR4:
         /* GICv3 identification value */
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        *r = GICV3_GICD_PIDR4;
+        *r = vgic_reg32_read(GICV3_GICD_PIDR4, info);
         return 1;
     case GICD_PIDR5 ... GICD_PIDR7:
         /* Reserved0 */
@@ -910,12 +939,14 @@ static int vgic_v3_distr_mmio_write(struct vcpu *v, mmio_info_t *info)
         rank = vgic_rank_offset(v, 64, gicd_reg - GICD_IROUTER,
                                 DABT_DOUBLE_WORD);
         if ( rank == NULL ) goto write_ignore;
-        new_irouter = *r;
         vgic_lock_rank(v, rank, flags);
 
         old_irouter = rank->v3.irouter[REG_RANK_INDEX(64,
                                        (gicd_reg - GICD_IROUTER),
                                        DABT_DOUBLE_WORD)];
+        new_irouter = old_irouter;
+        vgic_reg64_write(&new_irouter, *r, info);
+
         old_vcpu = vgic_v3_irouter_to_vcpu(v->domain, old_irouter);
         new_vcpu = vgic_v3_irouter_to_vcpu(v->domain, new_irouter);
 

@@ -123,7 +123,7 @@ static int __vgic_v3_rdistr_rd_mmio_read(struct vcpu *v, mmio_info_t *info,
     {
         uint64_t typer, aff;
 
-        if ( dabt.size != DABT_DOUBLE_WORD ) goto bad_width;
+        if ( !vgic_reg64_check_access(dabt) ) goto bad_width;
         /* TBD: Update processor id in [23:8] when ITS support is added */
         aff = (MPIDR_AFFINITY_LEVEL(v->arch.vmpidr, 3) << 56 |
                MPIDR_AFFINITY_LEVEL(v->arch.vmpidr, 2) << 48 |
@@ -209,7 +209,7 @@ bad_width:
     return 0;
 
 read_as_zero_64:
-    if ( dabt.size != DABT_DOUBLE_WORD ) goto bad_width;
+    if ( !vgic_reg64_check_access(dabt) ) goto bad_width;
     *r = 0;
     return 1;
 
@@ -286,7 +286,7 @@ bad_width:
     return 0;
 
 write_ignore_64:
-    if ( dabt.size != DABT_DOUBLE_WORD ) goto bad_width;
+    if ( vgic_reg64_check_access(dabt) ) goto bad_width;
     return 1;
 
 write_ignore_32:
@@ -774,7 +774,7 @@ static int vgic_v3_distr_mmio_read(struct vcpu *v, mmio_info_t *info)
     {
         uint64_t irouter;
 
-        if ( dabt.size != DABT_DOUBLE_WORD ) goto bad_width;
+        if ( !vgic_reg64_check_access(dabt) ) goto bad_width;
         rank = vgic_rank_offset(v, 64, gicd_reg - GICD_IROUTER,
                                 DABT_DOUBLE_WORD);
         if ( rank == NULL ) goto read_as_zero;
@@ -850,7 +850,7 @@ bad_width:
     return 0;
 
 read_as_zero_64:
-    if ( dabt.size != DABT_DOUBLE_WORD ) goto bad_width;
+    if ( vgic_reg64_check_access(dabt) ) goto bad_width;
     *r = 0;
     return 1;
 
@@ -935,7 +935,7 @@ static int vgic_v3_distr_mmio_write(struct vcpu *v, mmio_info_t *info)
         /* SGI/PPI is RES0 */
         goto write_ignore_64;
     case GICD_IROUTER32 ... GICD_IROUTERN:
-        if ( dabt.size != DABT_DOUBLE_WORD ) goto bad_width;
+        if ( !vgic_reg64_check_access(dabt) ) goto bad_width;
         rank = vgic_rank_offset(v, 64, gicd_reg - GICD_IROUTER,
                                 DABT_DOUBLE_WORD);
         if ( rank == NULL ) goto write_ignore;
@@ -1016,7 +1016,7 @@ write_ignore_32:
     return 1;
 
 write_ignore_64:
-    if ( dabt.size != DABT_DOUBLE_WORD ) goto bad_width;
+    if ( vgic_reg64_check_access(dabt) ) goto bad_width;
     return 1;
 
 write_ignore:

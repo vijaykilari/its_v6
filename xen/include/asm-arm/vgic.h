@@ -199,6 +199,15 @@ static inline uint64_t vgic_reg_mask(enum dabt_size size)
  * Note that the alignment fault will always be taken in the guest
  * (see B3.12.7 DDI0406.b).
  */
+static inline bool vgic_reg64_check_access(struct hsr_dabt dabt)
+{
+    /*
+     * 64 bits registers can be accessible using 32-bit and 64-bit unless
+     * stated otherwise (See 8.1.3 ARM IHI 0069A).
+     */
+    return ( dabt.size == DABT_DOUBLE_WORD || dabt.size == DABT_WORD );
+}
+
 static inline register_t vgic_reg_read(uint64_t reg,
                                        unsigned int offset,
                                        enum dabt_size size)

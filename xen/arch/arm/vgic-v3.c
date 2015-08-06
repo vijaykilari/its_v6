@@ -122,6 +122,7 @@ static int __vgic_v3_rdistr_rd_mmio_read(struct vcpu *v, mmio_info_t *info,
         *r = vgic_reg32_read(GICV3_GICR_IIDR_VAL, info);
         return 1;
     case GICR_TYPER:
+    case GICR_TYPER + 4:
     {
         uint64_t typer, aff;
 
@@ -136,7 +137,10 @@ static int __vgic_v3_rdistr_rd_mmio_read(struct vcpu *v, mmio_info_t *info,
         if ( v->arch.vgic.flags & VGIC_V3_RDIST_LAST )
             typer |= GICR_TYPER_LAST;
 
-        *r = vgic_reg64_read(typer, info);
+        if ( dabt.size == DABT_DOUBLE_WORD )
+            *r = vgic_reg64_read(typer, info);
+        else
+            *r = vgic_reg32_read(typer, info);
 
         return 1;
     }

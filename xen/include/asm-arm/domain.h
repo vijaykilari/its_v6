@@ -102,6 +102,7 @@ struct arch_domain
          * struct arch_vcpu.
          */
         struct pending_irq *pending_irqs;
+        struct pending_irq *pending_lpis;
         /* Base address for guest GIC */
         paddr_t dbase; /* Distributor base address */
 #ifdef CONFIG_HAS_GICV3

@@ -73,7 +73,7 @@ static bool_t vgic_is_domain_lpi(struct domain *d, unsigned int lpi)
             (lpi < (d->arch.vgic.nr_lpis + FIRST_GIC_LPI)));
 }
 
-static void vgic_init_pending_irq(struct pending_irq *p, unsigned int virq)
+void vgic_init_pending_irq(struct pending_irq *p, unsigned int virq)
 {
     INIT_LIST_HEAD(&p->inflight);
     INIT_LIST_HEAD(&p->lr_queue);
@@ -446,13 +446,19 @@ int vgic_to_sgi(struct vcpu *v, register_t sgir, enum gic_sgi_mode irqmode, int 
 
 struct pending_irq *irq_to_pending(struct vcpu *v, unsigned int irq)
 {
-    struct pending_irq *n;
+    struct pending_irq *n = NULL;
     /* Pending irqs allocation strategy: the first vgic.nr_spis irqs
-     * are used for SPIs; the rests are used for per cpu irqs */
+     * are used for SPIs; the rests are used for per cpu irqs.
+     * For LPIs pending_irq structures are allocated separately */
     if ( irq < 32 )
         n = &v->arch.vgic.pending_irqs[irq];
+    else if ( vgic_is_domain_lpi(v->domain, irq) )
+        n = &v->domain->arch.vgic.pending_lpis[irq - FIRST_GIC_LPI];
     else
         n = &v->domain->arch.vgic.pending_irqs[irq - 32];
+
+    ASSERT(n != NULL);
+
     return n;
 }
 

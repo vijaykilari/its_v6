@@ -908,6 +908,14 @@ int vits_domain_init(struct domain *d)
 
     vits = d->arch.vgic.vits;
 
+    d->arch.vgic.pending_lpis = xzalloc_array(struct pending_irq,
+                                              d->arch.vgic.nr_lpis);
+    if ( d->arch.vgic.pending_lpis == NULL )
+        return -ENOMEM;
+
+    for ( i = 0; i < d->arch.vgic.nr_lpis; i++ )
+        vgic_init_pending_irq(&d->arch.vgic.pending_lpis[i], i + FIRST_GIC_LPI);
+
     spin_lock_init(&vits->lock);
     spin_lock_init(&vits->prop_lock);
 
@@ -937,6 +945,7 @@ void vits_domain_free(struct domain *d)
 {
    free_xenheap_pages(d->arch.vgic.vits->prop_page,
                       get_order_from_bytes(d->arch.vgic.vits->prop_size));
+   xfree(d->arch.vgic.pending_lpis);
    xfree(d->arch.vgic.vits->collections);
    xfree(d->arch.vgic.vits);
 }

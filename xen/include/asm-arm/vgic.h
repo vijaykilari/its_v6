@@ -339,6 +339,7 @@ extern int vgic_to_sgi(struct vcpu *v, register_t sgir,
                        enum gic_sgi_mode irqmode, int virq,
                        const struct sgi_target *target);
 extern void vgic_migrate_irq(struct vcpu *old, struct vcpu *new, unsigned int irq);
+extern void vgic_init_pending_irq(struct pending_irq *p, unsigned int virq);
 
 /* Reserve a specific guest vIRQ */
 extern bool_t vgic_reserve_virq(struct domain *d, unsigned int virq);
@@ -371,7 +372,8 @@ void vgic_v3_setup_hw(paddr_t dbase,
                       const struct rdist_region *regions,
                       uint32_t rdist_stride);
 #endif
-
+bool_t vgic_is_domain_lpi(struct domain *d, unsigned int lpi);
+ 
 #endif /* __ASM_ARM_VGIC_H__ */
 
 /*

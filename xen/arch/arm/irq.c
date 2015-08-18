@@ -31,6 +31,8 @@
 static unsigned int local_irqs_type[NR_LOCAL_IRQS];
 static DEFINE_SPINLOCK(local_irqs_type_lock);
 
+static irq_desc_t *irq_desc_lpi;
+
 /* Describe an IRQ assigned to a guest */
 struct irq_guest
 {
@@ -61,7 +63,15 @@ static DEFINE_PER_CPU(irq_desc_t[NR_LOCAL_IRQS], local_irq_desc);
 irq_desc_t *__irq_to_desc(int irq)
 {
     if (irq < NR_LOCAL_IRQS) return &this_cpu(local_irq_desc)[irq];
-    return &irq_desc[irq-NR_LOCAL_IRQS];
+    else if ( gic_is_lpi(irq) )
+    {
+        ASSERT(irq_desc_lpi != NULL);
+        return &irq_desc_lpi[irq - FIRST_GIC_LPI];
+    }
+    else
+        return &irq_desc[irq - NR_LOCAL_IRQS];
+
+    return NULL;
 }
 
 int __init arch_init_one_irq_desc(struct irq_desc *desc)
@@ -107,6 +117,31 @@ static int init_local_irq_data(void)
     }
 
     spin_unlock(&local_irqs_type_lock);
+
+    return 0;
+}
+
+int init_lpi(void)
+{
+    struct irq_desc *desc;
+    unsigned int i, nr_lpis;
+
+    nr_lpis = gic_nr_irq_ids() - FIRST_GIC_LPI;
+    ASSERT(nr_lpis >= 0);
+
+    /* Allocate LPI irq descriptors */
+    irq_desc_lpi = xzalloc_array(struct irq_desc, nr_lpis);
+    if ( !irq_desc_lpi )
+        return -ENOMEM;
+
+    for ( i = 0; i < nr_lpis; i++ )
+    {
+       desc = &irq_desc_lpi[i];
+       init_one_irq_desc(desc);
+       desc->irq = FIRST_GIC_LPI + i;
+       desc->arch.type = DT_IRQ_TYPE_EDGE_BOTH;
+       desc->action = NULL;
+    }
 
     return 0;
 }

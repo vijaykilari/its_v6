@@ -1435,6 +1435,10 @@ int __init its_init(struct rdist_prop *rdists)
     its_alloc_lpi_tables();
     its_lpi_init(rdists->id_bits);
 
+    /* Allocate irq descriptors for LPIs */
+    if ( init_lpi() )
+        return -ENOMEM;
+
     its = list_first_entry(&its_nodes, struct its_node, entry);
     if ( !its )
         return -ENOMEM;

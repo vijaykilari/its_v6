@@ -68,6 +68,7 @@ int platform_get_irq(const struct dt_device_node *device, int index);
 void irq_set_affinity(struct irq_desc *desc, const cpumask_t *cpu_mask);
 void irq_set_msi_desc(struct irq_desc *desc, struct msi_desc *msi);
 struct msi_desc *irq_get_msi_desc(struct irq_desc *desc);
+int init_lpi(void);
 
 #endif /* _ASM_HW_IRQ_H */
 /*

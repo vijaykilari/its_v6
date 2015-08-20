@@ -407,14 +407,11 @@ void vgic_clear_pending_irqs(struct vcpu *v)
 void vgic_vcpu_inject_irq(struct vcpu *v, unsigned int virq)
 {
     uint8_t priority;
-    struct vgic_irq_rank *rank = vgic_rank_irq(v, virq);
     struct pending_irq *iter, *n = irq_to_pending(v, virq);
     unsigned long flags;
     bool_t running;
 
-    vgic_lock_rank(v, rank, flags);
     priority = v->domain->arch.vgic.handler->get_irq_priority(v, virq);
-    vgic_unlock_rank(v, rank, flags);
 
     spin_lock_irqsave(&v->arch.vgic.lock, flags);
 

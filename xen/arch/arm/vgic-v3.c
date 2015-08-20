@@ -1096,11 +1096,13 @@ static const struct mmio_handler_ops vgic_distr_mmio_handler = {
 static int vgic_v3_get_irq_priority(struct vcpu *v, unsigned int irq)
 {
     int priority;
+    unsigned long flags;
     struct vgic_irq_rank *rank = vgic_rank_irq(v, irq);
 
-    ASSERT(spin_is_locked(&rank->lock));
+    vgic_lock_rank(v, rank, flags);
     priority = vgic_byte_read(rank->ipriority[REG_RANK_INDEX(8,
                                               irq, DABT_WORD)], 0, irq & 0x3);
+    vgic_unlock_rank(v, rank, flags);
 
     return priority;
 }

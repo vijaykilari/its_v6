@@ -19,11 +19,12 @@ struct arch_irq_desc {
 };
 
 #define NR_LOCAL_IRQS	32
-#define NR_IRQS		1024
+/* Number of SGIs + PPIs + SPIs */
+#define NR_ITLINES	1024
 
-#define nr_irqs NR_IRQS
-#define nr_static_irqs NR_IRQS
-#define arch_hwdom_irqs(domid) NR_IRQS
+#define nr_irqs NR_ITLINES
+#define nr_static_irqs NR_ITLINES
+#define arch_hwdom_irqs(domid) NR_ITLINES
 
 struct irq_desc;
 struct irqaction;

@@ -55,7 +55,7 @@ hw_irq_controller no_irq_type = {
     .end = end_none
 };
 
-static irq_desc_t irq_desc[NR_IRQS];
+static irq_desc_t irq_desc[NR_ITLINES];
 static DEFINE_PER_CPU(irq_desc_t[NR_LOCAL_IRQS], local_irq_desc);
 
 irq_desc_t *__irq_to_desc(int irq)
@@ -75,7 +75,7 @@ static int __init init_irq_data(void)
 {
     int irq;
 
-    for (irq = NR_LOCAL_IRQS; irq < NR_IRQS; irq++) {
+    for (irq = NR_LOCAL_IRQS; irq < NR_ITLINES; irq++) {
         struct irq_desc *desc = irq_to_desc(irq);
         init_one_irq_desc(desc);
         desc->irq = irq;
@@ -407,11 +407,11 @@ int route_irq_to_guest(struct domain *d, unsigned int virq,
     unsigned long flags;
     int retval = 0;
 
-    if ( virq >= vgic_num_irqs(d) )
+    if ( virq >= vgic_num_irq_lines(d) )
     {
         printk(XENLOG_G_ERR
                "the vIRQ number %u is too high for domain %u (max = %u)\n",
-               irq, d->domain_id, vgic_num_irqs(d));
+               irq, d->domain_id, vgic_num_irq_lines(d));
         return -EINVAL;
     }
 
@@ -523,7 +523,7 @@ int release_guest_irq(struct domain *d, unsigned int virq)
     int ret;
 
     /* Only SPIs are supported */
-    if ( virq < NR_LOCAL_IRQS || virq >= vgic_num_irqs(d) )
+    if ( virq < NR_LOCAL_IRQS || virq >= vgic_num_irq_lines(d) )
         return -EINVAL;
 
     p = spi_to_pending(d, virq);

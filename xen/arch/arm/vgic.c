@@ -122,7 +122,7 @@ int domain_vgic_init(struct domain *d, unsigned int nr_spis)
         return ret;
 
     d->arch.vgic.allocated_irqs =
-        xzalloc_array(unsigned long, BITS_TO_LONGS(vgic_num_irqs(d)));
+        xzalloc_array(unsigned long, BITS_TO_LONGS(vgic_num_irq_lines(d)));
     if ( !d->arch.vgic.allocated_irqs )
         return -ENOMEM;
 
@@ -254,7 +254,7 @@ void arch_move_irqs(struct vcpu *v)
     struct vcpu *v_target;
     int i;
 
-    for ( i = 32; i < vgic_num_irqs(d); i++ )
+    for ( i = 32; i < vgic_num_irq_lines(d); i++ )
     {
         v_target = vgic_get_target_vcpu(v, i);
         p = irq_to_pending(v_target, i);
@@ -465,7 +465,7 @@ void vgic_vcpu_inject_spi(struct domain *d, unsigned int virq)
     struct vcpu *v;
 
     /* the IRQ needs to be an SPI */
-    ASSERT(virq >= 32 && virq <= vgic_num_irqs(d));
+    ASSERT(virq >= 32 && virq <= vgic_num_irq_lines(d));
 
     v = vgic_get_target_vcpu(d->vcpu[0], virq);
     vgic_vcpu_inject_irq(v, virq);
@@ -487,7 +487,7 @@ int vgic_emulate(struct cpu_user_regs *regs, union hsr hsr)
 
 bool_t vgic_reserve_virq(struct domain *d, unsigned int virq)
 {
-    if ( virq >= vgic_num_irqs(d) )
+    if ( virq >= vgic_num_irq_lines(d) )
         return 0;
 
     return !test_and_set_bit(virq, d->arch.vgic.allocated_irqs);
@@ -507,7 +507,7 @@ int vgic_allocate_virq(struct domain *d, bool_t spi)
     else
     {
         first = 32;
-        end = vgic_num_irqs(d);
+        end = vgic_num_irq_lines(d);
     }
 
     /*

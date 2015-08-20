@@ -721,7 +721,7 @@ static int vgic_v3_distr_mmio_read(struct vcpu *v, mmio_info_t *info)
          * Number of interrupt identifier bits supported by the GIC
          * Stream Protocol Interface
          */
-        unsigned int irq_bits = get_count_order(vgic_num_irqs(v->domain));
+        unsigned int irq_bits = get_count_order(vgic_num_irq_lines(v->domain));
         /*
          * Number of processors that may be used as interrupt targets when ARE
          * bit is zero. The maximum is 8.

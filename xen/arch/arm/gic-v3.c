@@ -1315,7 +1315,10 @@ static int __init gicv3_init(void)
          * ITS dt node is available
          */
         if ( !its_init(&gicv3.rdist_data) )
+        {
             gicv3_info.lpi_supported = 1;
+            gicv3_info.nr_event_ids = its_get_nr_event_ids();
+        }
         else
             gicv3_info.lpi_supported = 0;
     }

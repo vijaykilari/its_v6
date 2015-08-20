@@ -283,6 +283,8 @@ extern void gic_dump_info(struct vcpu *v);
 
 /* Number of interrupt lines */
 extern unsigned int gic_number_lines(void);
+/* Number of event ids supported */
+extern unsigned int gic_nr_event_ids(void);
 /* LPI support info */
 bool_t gic_lpi_supported(void);
 
@@ -304,6 +306,8 @@ struct gic_info {
     const struct dt_device_node *node;
     /* Number of IRQ ID bits supported */
     uint32_t nr_id_bits;
+    /* Number of Event IDs supported */
+    uint32_t nr_event_ids;
     /* LPIs are support information */
     bool_t lpi_supported; 
 };

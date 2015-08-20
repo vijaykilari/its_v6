@@ -81,6 +81,11 @@ bool_t gic_lpi_supported(void)
     return gic_hw_ops->info->lpi_supported;
 }
 
+unsigned int gic_nr_event_ids(void)
+{
+    return gic_hw_ops->info->nr_event_ids;
+}
+
 void gic_save_state(struct vcpu *v)
 {
     ASSERT(!local_irq_is_enabled());

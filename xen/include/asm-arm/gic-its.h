@@ -330,6 +330,7 @@ unsigned int irqdesc_get_lpi_event(struct irq_desc *desc);
 struct its_device *irqdesc_get_its_device(struct irq_desc *desc);
 void irqdesc_set_its_device(struct irq_desc *desc, struct its_device *dev);
 bool_t is_valid_collection(struct domain *d, uint32_t col);
+unsigned int its_get_nr_event_ids(void);
 int its_init(struct rdist_prop *rdists);
 int its_cpu_init(void);
 int its_add_device(u32 devid, u32 nr_ites, struct dt_device_node *dt_its);

@@ -138,6 +138,11 @@ void irqdesc_set_its_device(struct irq_desc *desc, struct its_device *dev)
     irq_get_msi_desc(desc)->dev = dev;
 }
 
+u32 its_get_nr_event_ids(void)
+{
+    return (1 << its_data.eventid_bits);
+}
+
 static struct its_collection *dev_event_to_col(struct its_device *dev,
                                                u32 event)
 {
@@ -861,6 +866,8 @@ int its_assign_device(struct domain *d, u32 vdevid, u32 pdevid)
 
     for ( i = 0; i < pdev->event_map.nr_lpis; i++ )
     {
+        ASSERT(i < gic_nr_event_ids());
+
         plpi = its_get_plpi(pdev, i);
         /* TODO: Route lpi */
     }

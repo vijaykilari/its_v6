@@ -14,6 +14,7 @@ obj-y += domain_build.o
 obj-y += gic.o gic-v2.o
 obj-$(CONFIG_ARM_32) += gic-hip04.o
 obj-$(CONFIG_HAS_GICV3) += gic-v3.o
+obj-$(CONFIG_HAS_GICV3) += gic-v3-its.o
 obj-y += io.o
 obj-y += irq.o
 obj-y += kernel.o

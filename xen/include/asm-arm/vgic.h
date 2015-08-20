@@ -285,7 +285,7 @@ enum gic_sgi_mode;
  */
 #define REG_RANK_INDEX(b, n, s) ((((n) >> s) & ((b)-1)) % 32)
 
-#define vgic_num_irqs(d)        ((d)->arch.vgic.nr_spis + 32)
+#define vgic_num_irq_lines(d)   ((d)->arch.vgic.nr_spis + 32)
 
 extern int domain_vgic_init(struct domain *d, unsigned int nr_spis);
 extern void domain_vgic_free(struct domain *d);

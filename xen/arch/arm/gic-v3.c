@@ -40,6 +40,7 @@
 #include <asm/device.h>
 #include <asm/gic.h>
 #include <asm/gic_v3_defs.h>
+#include <asm/gic-its.h>
 #include <asm/cpufeature.h>
 
 /* Global state */
@@ -1156,6 +1157,22 @@ static const hw_irq_controller gicv3_guest_irq_type = {
     .set_affinity = gicv3_irq_set_affinity,
 };
 
+static hw_irq_controller *gicv3_get_host_irq_type(unsigned int irq)
+{
+    if ( gic_is_lpi(irq) )
+       return &its_host_lpi_type;
+
+    return &gicv3_host_irq_type;
+}
+
+static hw_irq_controller *gicv3_get_guest_irq_type(unsigned int irq)
+{
+    if ( gic_is_lpi(irq) )
+       return &its_guest_lpi_type;
+
+    return &gicv3_guest_irq_type;
+}
+
 static int __init cmp_rdist(const void *a, const void *b)
 {
     const struct rdist_region *l = a, *r = a;
@@ -1309,8 +1326,8 @@ static const struct gic_hw_operations gicv3_ops = {
     .save_state          = gicv3_save_state,
     .restore_state       = gicv3_restore_state,
     .dump_state          = gicv3_dump_state,
-    .gic_host_irq_type   = &gicv3_host_irq_type,
-    .gic_guest_irq_type  = &gicv3_guest_irq_type,
+    .gic_get_host_irq_type   = gicv3_get_host_irq_type,
+    .gic_get_guest_irq_type  = gicv3_get_guest_irq_type,
     .eoi_irq             = gicv3_eoi_irq,
     .deactivate_irq      = gicv3_dir_irq,
     .read_irq            = gicv3_read_irq,

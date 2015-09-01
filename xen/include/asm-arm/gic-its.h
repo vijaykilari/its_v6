@@ -275,6 +275,8 @@ struct its_device {
     struct rb_node          node;
 };
 
+extern const hw_irq_controller its_host_lpi_type;
+extern const hw_irq_controller its_guest_lpi_type;
 void irqdesc_set_lpi_event(struct irq_desc *desc, unsigned id);
 unsigned int irqdesc_get_lpi_event(struct irq_desc *desc);
 struct its_device *irqdesc_get_its_device(struct irq_desc *desc);

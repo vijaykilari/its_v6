@@ -630,6 +630,16 @@ static hw_irq_controller hip04gic_guest_irq_type = {
     .set_affinity = hip04gic_irq_set_affinity,
 };
 
+static hw_irq_controller *hip04gic_get_host_irq_type(unsigned int irq)
+{
+    return &hip04gic_host_irq_type;
+}
+
+static hw_irq_controller *hip04gic_get_guest_irq_type(unsigned int irq)
+{
+    return &hip04gic_guest_irq_type;
+}
+
 static int __init hip04gic_init(void)
 {
     int res;
@@ -712,8 +722,8 @@ const static struct gic_hw_operations hip04gic_ops = {
     .save_state          = hip04gic_save_state,
     .restore_state       = hip04gic_restore_state,
     .dump_state          = hip04gic_dump_state,
-    .gic_host_irq_type   = &hip04gic_host_irq_type,
-    .gic_guest_irq_type  = &hip04gic_guest_irq_type,
+    .gic_get_host_irq_type   = hip04gic_get_host_irq_type,
+    .gic_get_guest_irq_type  = hip04gic_get_guest_irq_type,
     .eoi_irq             = hip04gic_eoi_irq,
     .deactivate_irq      = hip04gic_dir_irq,
     .read_irq            = hip04gic_read_irq,

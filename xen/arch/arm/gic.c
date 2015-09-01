@@ -104,6 +104,16 @@ void gic_restore_state(struct vcpu *v)
     gic_restore_pending_irqs(v);
 }
 
+static inline hw_irq_controller *get_host_hw_irq_controller(unsigned int irq)
+{
+    return gic_hw_ops->gic_get_host_irq_type(irq);
+}
+
+static inline hw_irq_controller *get_guest_hw_irq_controller(unsigned int irq)
+{
+    return gic_hw_ops->gic_get_guest_irq_type(irq);
+}
+
 /*
  * needs to be called with a valid cpu_mask, ie each cpu in the mask has
  * already called gic_cpu_init
@@ -128,7 +138,7 @@ void gic_route_irq_to_xen(struct irq_desc *desc, const cpumask_t *cpu_mask,
     ASSERT(test_bit(_IRQ_DISABLED, &desc->status));
     ASSERT(spin_is_locked(&desc->lock));
 
-    desc->handler = gic_hw_ops->gic_host_irq_type;
+    desc->handler = get_host_hw_irq_controller(desc->irq);
 
     gic_set_irq_properties(desc, cpu_mask, priority);
 }
@@ -159,7 +169,7 @@ int gic_route_irq_to_guest(struct domain *d, unsigned int virq,
          test_bit(GIC_IRQ_GUEST_ENABLED, &p->status) )
         goto out;
 
-    desc->handler = gic_hw_ops->gic_guest_irq_type;
+    desc->handler = get_guest_hw_irq_controller(desc->irq);
     set_bit(_IRQ_GUEST, &desc->status);
 
     gic_set_irq_properties(desc, cpumask_of(v_target->processor), priority);

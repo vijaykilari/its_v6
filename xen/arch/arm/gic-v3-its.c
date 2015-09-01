@@ -444,6 +444,125 @@ static void its_send_discard(struct its_device *dev, u32 event)
     its_send_single_command(dev->its, &cmd, col);
 }
 
+static void its_flush_and_invalidate_prop(struct irq_desc *desc, u8 *cfg)
+{
+    struct its_device *its_dev = irqdesc_get_its_device(desc);
+    u32 vid = irqdesc_get_lpi_event(desc);
+
+    ASSERT(vid < its_dev->event_map.nr_lpis);
+
+    /*
+     * Make the above write visible to the redistributors.
+     * And yes, we're flushing exactly: One. Single. Byte.
+     * Humpf...
+     */
+    if ( gic_rdists->flags & RDIST_FLAGS_PROPBASE_NEEDS_FLUSHING )
+        clean_and_invalidate_dcache_va_range(cfg, sizeof(*cfg));
+    else
+        dsb(ishst);
+
+    its_send_inv(its_dev, vid);
+}
+
+static void its_set_lpi_state(struct irq_desc *desc, int enable)
+{
+    u8 *cfg;
+
+    ASSERT(spin_is_locked(&its_lock));
+
+    cfg = gic_rdists->prop_page + desc->irq - FIRST_GIC_LPI;
+    if ( enable )
+        *cfg |= LPI_PROP_ENABLED;
+    else
+        *cfg &= ~LPI_PROP_ENABLED;
+
+    its_flush_and_invalidate_prop(desc, cfg);
+}
+
+static void its_irq_enable(struct irq_desc *desc)
+{
+    unsigned long flags;
+
+    ASSERT(spin_is_locked(&desc->lock));
+
+    spin_lock_irqsave(&its_lock, flags);
+    clear_bit(_IRQ_DISABLED, &desc->status);
+    dsb(sy);
+    its_set_lpi_state(desc, 1);
+    spin_unlock_irqrestore(&its_lock, flags);
+}
+
+static void its_irq_disable(struct irq_desc *desc)
+{
+    unsigned long flags;
+
+    ASSERT(spin_is_locked(&desc->lock));
+
+    spin_lock_irqsave(&its_lock, flags);
+    its_set_lpi_state(desc, 0);
+    set_bit(_IRQ_DISABLED, &desc->status);
+    spin_unlock_irqrestore(&its_lock, flags);
+}
+
+static unsigned int its_irq_startup(struct irq_desc *desc)
+{
+    its_irq_enable(desc);
+
+    return 0;
+}
+
+static void its_irq_shutdown(struct irq_desc *desc)
+{
+    its_irq_disable(desc);
+}
+
+static void its_irq_ack(struct irq_desc *desc)
+{
+    /* No ACK -- reading IAR has done this for us */
+}
+
+static void its_host_irq_end(struct irq_desc *desc)
+{
+    /* Lower the priority */
+    gicv3_eoi_irq(desc);
+    /* LPIs does not have active state. Do not deactivate */
+}
+
+static void its_guest_irq_end(struct irq_desc *desc)
+{
+    gicv3_eoi_irq(desc);
+}
+
+static void its_irq_set_affinity(struct irq_desc *desc, const cpumask_t *mask)
+{
+    /*TODO: Yet to support */
+    printk(XENLOG_G_WARNING "ITS: Setting Affinity of LPI is not supported\n");
+
+    return;
+}
+
+const hw_irq_controller its_host_lpi_type = {
+    .typename     = "gic-its",
+    .startup      = its_irq_startup,
+    .shutdown     = its_irq_shutdown,
+    .enable       = its_irq_enable,
+    .disable      = its_irq_disable,
+    .ack          = its_irq_ack,
+    .end          = its_host_irq_end,
+    .set_affinity = its_irq_set_affinity,
+};
+
+const hw_irq_controller its_guest_lpi_type = {
+    .typename     = "gic-its",
+    .startup      = its_irq_startup,
+    .shutdown     = its_irq_shutdown,
+    .enable       = its_irq_enable,
+    .disable      = its_irq_disable,
+    .ack          = its_irq_ack,
+    .end          = its_guest_irq_end,
+    .set_affinity = its_irq_set_affinity,
+};
+
 /*
  * How we allocate LPIs:
  *

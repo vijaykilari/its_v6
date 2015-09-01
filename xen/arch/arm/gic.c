@@ -128,7 +128,7 @@ void gic_route_irq_to_xen(struct irq_desc *desc, const cpumask_t *cpu_mask,
     ASSERT(test_bit(_IRQ_DISABLED, &desc->status));
     ASSERT(spin_is_locked(&desc->lock));
 
-    desc->handler = gic_hw_ops->gic_host_irq_type;
+    desc->handler = gic_hw_ops->gic_get_host_irq_type(desc->irq);
 
     gic_set_irq_properties(desc, cpu_mask, priority);
 }
@@ -159,7 +159,7 @@ int gic_route_irq_to_guest(struct domain *d, unsigned int virq,
          test_bit(GIC_IRQ_GUEST_ENABLED, &p->status) )
         goto out;
 
-    desc->handler = gic_hw_ops->gic_guest_irq_type;
+    desc->handler = gic_hw_ops->gic_get_guest_irq_type(desc->irq);
     set_bit(_IRQ_GUEST, &desc->status);
 
     gic_set_irq_properties(desc, cpumask_of(v_target->processor), priority);

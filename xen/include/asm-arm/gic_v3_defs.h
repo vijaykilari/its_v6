@@ -45,6 +45,7 @@
 
 /* Additional bits in GICD_TYPER defined by GICv3 */
 #define GICD_TYPER_ID_BITS_SHIFT     (19)
+#define GICD_TYPER_ID_BITS_MASK      (0x1f)
 
 #define GICD_TYPER_LPIS_SUPPORTED    (1U << 17)
 #define GICD_CTLR_RWP                (1UL << 31)

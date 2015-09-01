@@ -61,6 +61,8 @@ DEFINE_PER_CPU(struct rdist, rdist);
 
 /* Enable/Disable ITS support */
 static bool_t its_enable  = 0;
+/* Availability of ITS support after successful ITS initialization */
+static bool_t its_enabled = 0;
 
 static void __init parse_its_param(char *s)
 {
@@ -743,6 +745,10 @@ static int gicv3_cpu_init(void)
     if ( gicv3_enable_redist() )
         return -ENODEV;
 
+    /* Give LPIs a spin */
+    if ( gicv3_dist_supports_lpis() )
+        its_cpu_init();
+
     /* Set priority on PPI and SGI interrupts */
     priority = (GIC_PRI_IPI << 24 | GIC_PRI_IPI << 16 | GIC_PRI_IPI << 8 |
                 GIC_PRI_IPI);
@@ -1346,8 +1352,11 @@ static int __init gicv3_init(void)
                i, r->base, r->base + r->size);
     }
 
-    vgic_v3_setup_hw(dbase, gicv3.rdist_count, gicv3.rdist_regions,
-                     gicv3.rdist_stride);
+    reg = readl_relaxed(GICD + GICD_TYPER);
+
+    gicv3.rdist_data.id_bits = ((reg >> GICD_TYPER_ID_BITS_SHIFT) &
+                                GICD_TYPER_ID_BITS_MASK) + 1;
+
     gicv3_init_v2(node, dbase);
 
     spin_lock_init(&gicv3.lock);
@@ -1355,6 +1364,26 @@ static int __init gicv3_init(void)
     spin_lock(&gicv3.lock);
 
     gicv3_dist_init();
+
+    if ( its_enable && gicv3_dist_supports_lpis() )
+    {
+        /*
+         * LPI support is enabled only if HW supports it and
+         * ITS dt node is available
+         */
+        if ( !its_init(&gicv3.rdist_data) )
+            its_enabled = 1;
+        else
+        {
+            /* ITS initiazation failed. Reset nr_irq_ids to SPIs */
+            gicv3_info.nr_irq_ids = gicv3_info.nr_lines;
+            nr_lpis = 0;
+        }
+    }
+
+    vgic_v3_setup_hw(dbase, gicv3.rdist_count, gicv3.rdist_regions,
+                     gicv3.rdist_stride, its_enabled);
+
     res = gicv3_cpu_init();
     gicv3_hyp_init();
 

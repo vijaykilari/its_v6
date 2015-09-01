@@ -467,7 +467,7 @@ static void gicv3_mask_irq(struct irq_desc *irqd)
     gicv3_poke_irq(irqd, GICD_ICENABLER);
 }
 
-static void gicv3_eoi_irq(struct irq_desc *irqd)
+void gicv3_eoi_irq(struct irq_desc *irqd)
 {
     /* Lower the priority */
     WRITE_SYSREG32(irqd->irq, ICC_EOIR1_EL1);

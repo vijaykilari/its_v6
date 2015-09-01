@@ -189,6 +189,8 @@ struct rdist_prop {
 
 DECLARE_PER_CPU(struct rdist, rdist);
 
+void gicv3_eoi_irq(struct irq_desc *irqd);
+
 #endif /* __ASM_ARM_GIC_V3_DEFS_H__ */
 
 /*

@@ -51,6 +51,8 @@
 
 static struct {
     bool_t enabled;
+    /* Check if its supported */
+    bool_t lpi_support;
     /* Distributor interface address */
     paddr_t dbase;
     /* Re-distributor regions */
@@ -62,9 +64,10 @@ static struct {
 void vgic_v3_setup_hw(paddr_t dbase,
                       unsigned int nr_rdist_regions,
                       const struct rdist_region *regions,
-                      uint32_t rdist_stride)
+                      uint32_t rdist_stride, bool_t lpi_support)
 {
     vgic_v3_hw.enabled = 1;
+    vgic_v3_hw.lpi_support = lpi_support;
     vgic_v3_hw.dbase = dbase;
     vgic_v3_hw.nr_rdist_regions = nr_rdist_regions;
     vgic_v3_hw.regions = regions;

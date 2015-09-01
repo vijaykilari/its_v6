@@ -55,6 +55,18 @@ static struct {
 } gicv3;
 
 static struct gic_info gicv3_info;
+/* Enable/Disable ITS support */
+static bool_t its_enable  = 1;
+/* Availability of ITS support after successful ITS initialization */
+static bool_t its_enabled = 0;
+
+static void __init parse_its_param(char *s)
+{
+    if ( !parse_bool(s) )
+        its_enable = 0;
+}
+
+custom_param("its", parse_its_param);
 
 /* per-cpu re-distributor base */
 DEFINE_PER_CPU(struct rdist, rdist);
@@ -590,7 +602,7 @@ static void __init gicv3_dist_init(void)
      * Here we override HW supported number of LPIs and
      * limit to to LPIs specified in nr_lpis.
      */
-    if ( gicv3_dist_supports_lpis() )
+    if ( its_enabled && gicv3_dist_supports_lpis() )
         gicv3_info.nr_irq_ids = nr_lpis + FIRST_GIC_LPI;
     else
     {
@@ -713,6 +725,10 @@ static int __cpuinit gicv3_cpu_init(void)
 
     if ( gicv3_enable_redist() )
         return -ENODEV;
+
+    /* Give LPIs a spin */
+    if ( its_enabled && gicv3_dist_supports_lpis() )
+        its_cpu_init();
 
     /* Set priority on PPI and SGI interrupts */
     priority = (GIC_PRI_IPI << 24 | GIC_PRI_IPI << 16 | GIC_PRI_IPI << 8 |
@@ -1303,13 +1319,29 @@ static int __init gicv3_init(void)
                i, r->base, r->base + r->size);
     }
 
-    vgic_v3_setup_hw(dbase, gicv3.rdist_count, gicv3.rdist_regions,
-                     gicv3.rdist_stride);
+    reg = readl_relaxed(GICD + GICD_TYPER);
+
+    gicv3.rdist_data.id_bits = ((reg >> GICD_TYPE_ID_BITS_SHIFT) &
+                                GICD_TYPE_ID_BITS_MASK) + 1;
+
     gicv3_init_v2(node, dbase);
 
     spin_lock_init(&gicv3.lock);
 
     spin_lock(&gicv3.lock);
+
+    if ( its_enable && gicv3_dist_supports_lpis() )
+    {
+        /*
+         * LPI support is enabled only if HW supports it and
+         * ITS dt node is available
+         */
+        if ( !its_init(&gicv3.rdist_data) )
+            its_enabled = 1;
+    }
+
+    vgic_v3_setup_hw(dbase, gicv3.rdist_count, gicv3.rdist_regions,
+                     gicv3.rdist_stride, its_enabled);
 
     gicv3_dist_init();
     res = gicv3_cpu_init();

@@ -192,7 +192,7 @@ static int vgic_v2_distr_mmio_read(struct vcpu *v, mmio_info_t *info,
         if ( dabt.size != DABT_WORD ) goto bad_width;
         /* No secure world support for guests. */
         vgic_lock(v);
-        typer = ((v->domain->max_vcpus - 1) << GICD_TYPE_CPUS_SHIFT)
+        typer = ( ((v->domain->max_vcpus - 1) << GICD_TYPER_CPUS_SHIFT) )
             | DIV_ROUND_UP(v->domain->arch.vgic.nr_spis, 32);
         vgic_unlock(v);
 

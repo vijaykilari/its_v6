@@ -574,7 +574,7 @@ static void __init gicv3_dist_init(void)
     writel_relaxed(0, GICD + GICD_CTLR);
 
     type = readl_relaxed(GICD + GICD_TYPER);
-    nr_lines = 32 * ((type & GICD_TYPE_LINES) + 1);
+    nr_lines = 32 * ((type & GICD_TYPER_LINES) + 1);
 
     printk("GICv3: %d lines, (IID %8.8x).\n",
            nr_lines, readl_relaxed(GICD + GICD_IIDR));

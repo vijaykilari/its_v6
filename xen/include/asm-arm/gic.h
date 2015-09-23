@@ -98,10 +98,10 @@
 /* Register bits */
 #define GICD_CTL_ENABLE 0x1
 
-#define GICD_TYPE_LINES 0x01f
-#define GICD_TYPE_CPUS_SHIFT 5
-#define GICD_TYPE_CPUS  0x0e0
-#define GICD_TYPE_SEC   0x400
+#define GICD_TYPER_LINES 0x01f
+#define GICD_TYPER_CPUS_SHIFT 5
+#define GICD_TYPER_CPUS  0x0e0
+#define GICD_TYPER_SEC   0x400
 
 #define GICC_CTL_ENABLE 0x1
 #define GICC_CTL_EOI    (0x1 << 9)

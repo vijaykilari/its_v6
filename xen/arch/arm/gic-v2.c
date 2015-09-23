@@ -260,11 +260,11 @@ static void __init gicv2_dist_init(void)
     writel_gicd(0, GICD_CTLR);
 
     type = readl_gicd(GICD_TYPER);
-    nr_lines = 32 * ((type & GICD_TYPE_LINES) + 1);
-    gic_cpus = 1 + ((type & GICD_TYPE_CPUS) >> 5);
+    nr_lines = 32 * ((type & GICD_TYPER_LINES) + 1);
+    gic_cpus = 1 + ((type & GICD_TYPER_CPUS) >> 5);
     printk("GICv2: %d lines, %d cpu%s%s (IID %8.8x).\n",
            nr_lines, gic_cpus, (gic_cpus == 1) ? "" : "s",
-           (type & GICD_TYPE_SEC) ? ", secure" : "",
+           (type & GICD_TYPER_SEC) ? ", secure" : "",
            readl_gicd(GICD_IIDR));
 
     /* Default all global IRQs to level, active low */

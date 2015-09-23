@@ -44,7 +44,7 @@
 #define GICC_SRE_EL2_ENEL1           (1UL << 3)
 
 /* Additional bits in GICD_TYPER defined by GICv3 */
-#define GICD_TYPE_ID_BITS_SHIFT 19
+#define GICD_TYPER_ID_BITS_SHIFT     (19)
 
 #define GICD_TYPER_LPIS_SUPPORTED    (1U << 17)
 #define GICD_CTLR_RWP                (1UL << 31)

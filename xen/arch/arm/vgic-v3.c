@@ -919,10 +919,10 @@ static int vgic_v3_distr_mmio_read(struct vcpu *v, mmio_info_t *info,
 
         if ( dabt.size != DABT_WORD ) goto bad_width;
         /* No secure world support for guests. */
-        typer = ((ncpus - 1) << GICD_TYPE_CPUS_SHIFT |
+        typer = ((ncpus - 1) << GICD_TYPER_CPUS_SHIFT |
                  DIV_ROUND_UP(v->domain->arch.vgic.nr_spis, 32));
 
-        typer |= (irq_bits - 1) << GICD_TYPE_ID_BITS_SHIFT;
+        typer |= (irq_bits - 1) << GICD_TYPER_ID_BITS_SHIFT;
 
         *r = vgic_reg32_extract(typer, info);
 
